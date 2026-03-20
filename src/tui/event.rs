@@ -1,8 +1,12 @@
 #![allow(clippy::unnested_or_patterns)]
 
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEventKind, MouseButton};
+use std::time::Instant;
 
-use super::app::{App, AppMode, StatusLevel};
+use super::app::{App, AppMode, ContextAction, StatusLevel};
+
+// 双击时间间隔（毫秒）
+const DOUBLE_CLICK_MS: u64 = 500;
 
 /// 处理终端事件，更新 App 状态。
 pub fn handle_event(app: &mut App, event: &Event) {
@@ -17,64 +21,82 @@ fn handle_key(app: &mut App, key: KeyEvent) {
     match &app.mode.clone() {
         AppMode::Normal => handle_normal(app, key),
         AppMode::Edit { .. } => handle_edit(app, key),
+        AppMode::EditKey { .. } => handle_edit_key(app, key),
         AppMode::ConfirmStripComments => handle_confirm(app, key),
         AppMode::Search { .. } => handle_search(app, key),
         AppMode::AddNode { .. } => handle_add_node(app, key),
+        AppMode::ContextMenu { .. } => handle_context_menu(app, key),
     }
 }
 
 // ── 普通模式 ─────────────────────────────────────────────────────────────────
+// 新交互方案：纯方向键，去掉 vim 风格
 
 fn handle_normal(app: &mut App, key: KeyEvent) {
     // 先清除上次状态消息
     app.status = None;
 
     match (key.code, key.modifiers) {
-        // 移动
-        (KeyCode::Char('j'), _) | (KeyCode::Down, _) => app.move_up(),
-        (KeyCode::Char('k'), _) | (KeyCode::Up, _) => app.move_down(),
+        // 导航：只用方向键
+        (KeyCode::Up, _) => app.move_up(),
+        (KeyCode::Down, _) => app.move_down(),
+        (KeyCode::Left, _) => app.collapse_or_go_parent(),
+        (KeyCode::Right, _) => app.expand_or_enter(),
 
-        // 展开 / 折叠
-        (KeyCode::Char('l'), _) | (KeyCode::Right, _) | (KeyCode::Enter, _) => {
-            app.expand_or_enter();
-        }
-        (KeyCode::Char('h'), _) | (KeyCode::Left, _) => {
-            app.collapse_or_go_parent();
-        }
+        // Space 切换展开/折叠
+        (KeyCode::Char(' '), _) => app.expand_or_toggle(),
 
-        // 编辑
-        (KeyCode::Char('e'), _) => app.start_edit(),
+        // Enter: 叶子节点进入编辑，容器节点展开
+        (KeyCode::Enter, _) => {
+            let lines = app.tree_lines();
+            if let Some(line) = lines.get(app.cursor) {
+                if line.has_children && !line.is_expanded {
+                    app.expanded.insert(line.path.clone());
+                } else if !line.has_children {
+                    app.start_edit();
+                }
+            }
+        }
 
         // 删除
-        (KeyCode::Char('d'), _) => app.delete_current(),
+        (KeyCode::Delete, _) => app.delete_current(),
+
+        // 新建节点
+        (KeyCode::Insert, _) | (KeyCode::Char('n'), _) => app.start_add_node(),
 
         // 撤销 / 重做
-        (KeyCode::Char('u'), _) => app.undo(),
-        (KeyCode::Char('r'), KeyModifiers::CONTROL) => app.redo(),
+        (KeyCode::Char('z'), KeyModifiers::CONTROL) => app.undo(),
+        (KeyCode::Char('y'), KeyModifiers::CONTROL) => app.redo(),
 
         // 保存
         (KeyCode::Char('s'), KeyModifiers::CONTROL) => app.try_save(),
 
         // 搜索
-        (KeyCode::Char('/'), _) => app.start_search(),
+        (KeyCode::Char('f'), KeyModifiers::CONTROL) | (KeyCode::Char('/'), _) => app.start_search(),
 
-        // 添加节点
-        (KeyCode::Char('a'), _) => app.start_add_node(),
+        // 右键菜单
+        (KeyCode::F(2), _) => {
+            app.show_context_menu(5, (app.cursor as u16) + 1);
+        }
 
-        // 退出
-        (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+        // 帮助
+        (KeyCode::F(1), _) => {
+            app.set_status(
+                " ↑↓:移动 ←:折叠 →/Space:展开 Enter:编辑 N:新建 Del:删除 Ctrl+S:保存 Ctrl+F:搜索 F1:帮助 ",
+                StatusLevel::Info,
+            );
+        }
+
+        // 退出：只有 Ctrl+Q 可退出（未修改时直接退出，已修改时提示）
+        (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
             if app.modified {
                 app.set_status(
-                    "文件已修改未保存。再按 q 强制退出，或 ctrl+s 保存",
+                    " 文件已修改！Ctrl+S 保存，Ctrl+Q 强制退出 ",
                     StatusLevel::Warn,
                 );
             } else {
                 app.should_quit = true;
             }
-        }
-        (KeyCode::Char('Q'), _) => {
-            // 强制退出，不保存
-            app.should_quit = true;
         }
 
         _ => {}
@@ -94,6 +116,58 @@ fn handle_edit(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Enter => {
             app.confirm_edit();
+        }
+        KeyCode::Esc => {
+            app.cancel_edit();
+        }
+        KeyCode::Char(c) => {
+            buffer.insert(*cursor_pos, c);
+            *cursor_pos += c.len_utf8();
+        }
+        KeyCode::Backspace => {
+            if *cursor_pos > 0 {
+                let prev = prev_char_boundary(buffer, *cursor_pos);
+                buffer.drain(prev..*cursor_pos);
+                *cursor_pos = prev;
+            }
+        }
+        KeyCode::Delete => {
+            if *cursor_pos < buffer.len() {
+                let next = next_char_boundary(buffer, *cursor_pos);
+                buffer.drain(*cursor_pos..next);
+            }
+        }
+        KeyCode::Left => {
+            if *cursor_pos > 0 {
+                *cursor_pos = prev_char_boundary(buffer, *cursor_pos);
+            }
+        }
+        KeyCode::Right => {
+            if *cursor_pos < buffer.len() {
+                *cursor_pos = next_char_boundary(buffer, *cursor_pos);
+            }
+        }
+        KeyCode::Home => {
+            *cursor_pos = 0;
+        }
+        KeyCode::End => {
+            *cursor_pos = buffer.len();
+        }
+        _ => {}
+    }
+}
+
+fn handle_edit_key(app: &mut App, key: KeyEvent) {
+    let AppMode::EditKey {
+        buffer, cursor_pos, ..
+    } = &mut app.mode
+    else {
+        return;
+    };
+
+    match key.code {
+        KeyCode::Enter => {
+            app.confirm_edit_key();
         }
         KeyCode::Esc => {
             app.cancel_edit();
@@ -206,12 +280,9 @@ fn handle_search(app: &mut App, key: KeyEvent) {
 fn handle_add_node(app: &mut App, key: KeyEvent) {
     let AppMode::AddNode {
         parent_path: _,
-        is_array,
+        is_array: _,
         key_buffer,
-        value_buffer,
-        focus_on_key,
         key_cursor,
-        value_cursor,
     } = &mut app.mode
     else {
         return;
@@ -224,77 +295,81 @@ fn handle_add_node(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => {
             app.cancel_add_node();
         }
-        KeyCode::Tab => {
-            // 切换焦点（数组模式只能在 value）
-            if !*is_array {
-                *focus_on_key = !*focus_on_key;
-            }
-        }
         KeyCode::Char(c) => {
-            if *focus_on_key && !*is_array {
-                key_buffer.insert(*key_cursor, c);
-                *key_cursor += c.len_utf8();
-            } else {
-                value_buffer.insert(*value_cursor, c);
-                *value_cursor += c.len_utf8();
-            }
+            key_buffer.insert(*key_cursor, c);
+            *key_cursor += c.len_utf8();
         }
         KeyCode::Backspace => {
-            if *focus_on_key && !*is_array {
-                if *key_cursor > 0 {
-                    let prev = prev_char_boundary(key_buffer, *key_cursor);
-                    key_buffer.drain(prev..*key_cursor);
-                    *key_cursor = prev;
-                }
-            } else if *value_cursor > 0 {
-                let prev = prev_char_boundary(value_buffer, *value_cursor);
-                value_buffer.drain(prev..*value_cursor);
-                *value_cursor = prev;
+            if *key_cursor > 0 {
+                let prev = prev_char_boundary(key_buffer, *key_cursor);
+                key_buffer.drain(prev..*key_cursor);
+                *key_cursor = prev;
             }
         }
         KeyCode::Delete => {
-            if *focus_on_key && !*is_array {
-                if *key_cursor < key_buffer.len() {
-                    let next = next_char_boundary(key_buffer, *key_cursor);
-                    key_buffer.drain(*key_cursor..next);
-                }
-            } else if *value_cursor < value_buffer.len() {
-                let next = next_char_boundary(value_buffer, *value_cursor);
-                value_buffer.drain(*value_cursor..next);
+            if *key_cursor < key_buffer.len() {
+                let next = next_char_boundary(key_buffer, *key_cursor);
+                key_buffer.drain(*key_cursor..next);
             }
         }
         KeyCode::Left => {
-            if *focus_on_key && !*is_array {
-                if *key_cursor > 0 {
-                    *key_cursor = prev_char_boundary(key_buffer, *key_cursor);
-                }
-            } else if *value_cursor > 0 {
-                *value_cursor = prev_char_boundary(value_buffer, *value_cursor);
+            if *key_cursor > 0 {
+                *key_cursor = prev_char_boundary(key_buffer, *key_cursor);
             }
         }
         KeyCode::Right => {
-            if *focus_on_key && !*is_array {
-                if *key_cursor < key_buffer.len() {
-                    *key_cursor = next_char_boundary(key_buffer, *key_cursor);
-                }
-            } else if *value_cursor < value_buffer.len() {
-                *value_cursor = next_char_boundary(value_buffer, *value_cursor);
+            if *key_cursor < key_buffer.len() {
+                *key_cursor = next_char_boundary(key_buffer, *key_cursor);
             }
         }
         KeyCode::Home => {
-            if *focus_on_key && !*is_array {
-                *key_cursor = 0;
-            } else {
-                *value_cursor = 0;
-            }
+            *key_cursor = 0;
         }
         KeyCode::End => {
-            if *focus_on_key && !*is_array {
-                *key_cursor = key_buffer.len();
-            } else {
-                *value_cursor = value_buffer.len();
+            *key_cursor = key_buffer.len();
+        }
+        _ => {}
+    }
+}
+
+// ── 右键菜单模式 ───────────────────────────────────────────────────────────
+
+fn handle_context_menu(app: &mut App, key: KeyEvent) {
+    let AppMode::ContextMenu { selected, .. } = &mut app.mode else {
+        return;
+    };
+
+    let actions = ContextAction::all();
+    let max = actions.len();
+
+    match key.code {
+        KeyCode::Esc => {
+            app.close_context_menu();
+        }
+        KeyCode::Enter => {
+            let action = actions[*selected];
+            app.execute_context_action(action);
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            if *selected > 0 {
+                *selected -= 1;
             }
         }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if *selected + 1 < max {
+                *selected += 1;
+            }
+        }
+        // 快捷键直接执行 (注意: k 已用于向上导航)
+        KeyCode::Char('e') => app.execute_context_action(ContextAction::Edit),
+        KeyCode::Char('a') => app.execute_context_action(ContextAction::AddChild),
+        KeyCode::Char('s') => app.execute_context_action(ContextAction::AddSibling),
+        KeyCode::Char('d') => app.execute_context_action(ContextAction::Delete),
+        KeyCode::Char('c') => app.execute_context_action(ContextAction::CopyKey),
+        KeyCode::Char('v') => app.execute_context_action(ContextAction::CopyValue),
+        KeyCode::Char('p') => app.execute_context_action(ContextAction::CopyPath),
+        KeyCode::Char('*') => app.execute_context_action(ContextAction::ExpandAll),
+        KeyCode::Char('-') => app.execute_context_action(ContextAction::CollapseAll),
         _ => {}
     }
 }
@@ -302,11 +377,62 @@ fn handle_add_node(app: &mut App, key: KeyEvent) {
 // ── 鼠标处理 ─────────────────────────────────────────────────────────────────
 
 fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) {
-    // 只处理左键点击
-    if event.kind != crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) {
-        return;
+    // 如果在右键菜单模式下，处理菜单内的鼠标移动和点击
+    if let AppMode::ContextMenu { mouse_x, mouse_y, .. } = &app.mode {
+        let actions = ContextAction::all();
+        let menu_width = 28i32;
+        let menu_height = actions.len() as i32 + 2;
+
+        // 先保存坐标，避免重复借用
+        let saved_mouse_x = *mouse_x as i32;
+        let saved_mouse_y = *mouse_y as i32;
+
+        let menu_x = saved_mouse_x - 2;
+        let menu_y = saved_mouse_y;
+
+        let click_x = event.column as i32;
+        let click_y = event.row as i32;
+
+        // 检查鼠标是否在菜单区域内，更新悬停状态
+        let in_menu_area = click_x >= menu_x
+            && click_x < menu_x + menu_width
+            && click_y >= menu_y
+            && click_y < menu_y + menu_height;
+
+        if in_menu_area {
+            let item_index = (click_y - menu_y - 1) as usize;
+            if item_index < actions.len() {
+                app.menu_hover_row = Some(item_index);
+            }
+        } else {
+            app.menu_hover_row = None;
+            // 鼠标移出菜单区域时关闭菜单
+            app.close_context_menu();
+        }
+
+        // 处理左键点击
+        if event.kind == crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) {
+            if in_menu_area {
+                // 计算点击了哪一项（减去标题行）
+                let item_index = (click_y - menu_y - 1) as usize;
+                if item_index < actions.len() {
+                    let action = actions[item_index];
+                    app.execute_context_action(action);
+                    return;
+                }
+            }
+            // 点击菜单外，关闭菜单
+            app.close_context_menu();
+            return;
+        }
+        // 右键点击菜单外也关闭
+        if event.kind == crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Right) {
+            app.close_context_menu();
+            return;
+        }
     }
 
+    // 普通模式下的树形视图鼠标处理
     let lines = app.tree_lines();
     if lines.is_empty() {
         return;
@@ -316,9 +442,105 @@ fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) {
     let row = event.row as usize;
     let item_row = row.saturating_sub(1);
 
-    if item_row < lines.len() {
+    if item_row >= lines.len() {
+        return;
+    }
+
+    // 处理右键点击：显示菜单
+    if event.kind == crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Right) {
         app.cursor = item_row;
         app.list_state.select(Some(item_row));
+        app.show_context_menu(event.column, event.row);
+        return;
+    }
+
+    // 只处理左键单击和滚轮事件
+    match event.kind {
+        MouseEventKind::ScrollUp => {
+            let scroll_amount = 5;
+            app.cursor = app.cursor.saturating_sub(scroll_amount);
+            app.list_state.select(Some(app.cursor));
+            return;
+        }
+        MouseEventKind::ScrollDown => {
+            let scroll_amount = 5;
+            let lines = app.tree_lines();
+            app.cursor = (app.cursor + scroll_amount).min(lines.len().saturating_sub(1));
+            app.list_state.select(Some(app.cursor));
+            return;
+        }
+        MouseEventKind::Down(MouseButton::Left) => {}
+        _ => return,
+    }
+
+    // 计算点击的是哪一行（树从 y=1 开始，每行高 1）
+    let row = event.row as usize;
+    let item_row = row.saturating_sub(1);
+
+    if item_row >= lines.len() {
+        return;
+    }
+
+    let line = &lines[item_row];
+
+    // 检测点击是否在展开/折叠区域（前几个字符）
+    // 每行格式: [indent][indicator][key]: [value]
+    // indent = 2空格 * depth, indicator = 2字符
+    let toggle_width = 2 + line.depth * 2; // indicator区域宽度
+    let click_col = event.column as usize;
+
+    // 检测双击：同一行 + 快速点击
+    let now = Instant::now();
+    let is_double_click = app
+        .last_click_time
+        .zip(app.last_click_row)
+        .map(|(time, prev_row)| {
+            let elapsed = now.duration_since(time).as_millis() as u64;
+            prev_row == item_row && elapsed < DOUBLE_CLICK_MS
+        })
+        .unwrap_or(false);
+
+    // 如果点击在展开/折叠区域，且节点有子节点，则切换展开/折叠
+    if click_col < toggle_width && line.has_children && !is_double_click {
+        app.cursor = item_row;
+        app.list_state.select(Some(item_row));
+        app.expand_or_toggle();
+        app.last_click_time = None;
+        app.last_click_row = None;
+        return;
+    }
+
+    if is_double_click {
+        // 双击：进入编辑模式
+        app.cursor = item_row;
+        app.list_state.select(Some(item_row));
+
+        // 判断点击的是键还是值区域
+        // 每行格式: [indent][indicator][key]: [value]
+        let key_region_end = toggle_width + line.display_key.len() + 2; // +2 for ": "
+
+        // 键区域不为空（数组索引不能编辑 key）
+        let is_key_editable = !line.display_key.is_empty()
+            && !line.display_key.starts_with('[');
+
+        if click_col < key_region_end && is_key_editable {
+            // 双击键：编辑键名
+            app.start_edit_key();
+        } else {
+            // 双击值：编辑值
+            app.start_edit();
+        }
+
+        // 重置双击状态
+        app.last_click_time = None;
+        app.last_click_row = None;
+    } else {
+        // 单击：选中节点
+        app.cursor = item_row;
+        app.list_state.select(Some(item_row));
+        // 记录点击时间供下次双击检测
+        app.last_click_time = Some(now);
+        app.last_click_row = Some(item_row);
     }
 }
 
