@@ -122,40 +122,6 @@ pub enum StatusLevel {
     Error,
 }
 
-/// 顶部菜单项。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MenuItem {
-    File,
-    Edit,
-    View,
-    Tools,
-    Help,
-}
-
-/// 菜单激活的子项。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MenuAction {
-    // File
-    Save,
-    SaveAs,
-    Quit,
-    // Edit
-    Undo,
-    Redo,
-    Delete,
-    // View
-    ExpandAll,
-    CollapseAll,
-    Search,
-    // Tools
-    Format,
-    Fix,
-    Diff,
-    // Help
-    Shortcuts,
-    About,
-}
-
 /// 应用整体状态。
 pub struct App {
     /// 文档树。
@@ -184,17 +150,10 @@ pub struct App {
     pub status: Option<(String, StatusLevel)>,
     pub should_quit: bool,
 
-    /// 菜单是否激活（显示下拉菜单）
-    pub menu_active: Option<MenuItem>,
-    /// 菜单项索引（用于键盘导航）
-    pub menu_selected: usize,
-    /// 菜单悬停索引（鼠标悬停）
-    pub menu_hover: Option<usize>,
-
     // 鼠标双击支持
     pub last_click_time: Option<std::time::Instant>,
     pub last_click_row: Option<usize>,
-    // 菜单悬停支持
+    // 右键菜单悬停支持
     pub menu_hover_row: Option<usize>,
 }
 
@@ -229,9 +188,6 @@ impl App {
             mode: AppMode::Normal,
             status: None,
             should_quit: false,
-            menu_active: None,
-            menu_selected: 0,
-            menu_hover: None,
             last_click_time: None,
             last_click_row: None,
             menu_hover_row: None,
@@ -634,20 +590,10 @@ impl App {
         }
     }
 
-    /// 复制文本到系统剪贴板。
+    /// 复制文本到系统剪贴板（跨平台）。
     fn copy_to_clipboard(&self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
-        // 使用 \echo 绕过 alias 干扰
-        let escaped = text.replace('\'', "'\\''");
-        let result = std::process::Command::new("sh")
-            .args(["-c", &format!("\\echo -n '{}' | xclip -selection clipboard", escaped)])
-            .output();
-
-        // 尝试 wayland
-        if result.as_ref().map(|o| !o.status.success()).unwrap_or(true) {
-            std::process::Command::new("sh")
-                .args(["-c", &format!("\\echo -n '{}' | wl-copy", escaped)])
-                .output()?;
-        }
+        let mut clipboard = arboard::Clipboard::new()?;
+        clipboard.set_text(text)?;
         Ok(())
     }
 
@@ -927,108 +873,6 @@ impl App {
         )
     }
 
-    // ── 菜单 ─────────────────────────────────────────────────────────────────
-
-    /// 切换菜单激活状态
-    pub fn toggle_menu(&mut self, item: MenuItem) {
-        if self.menu_active == Some(item) {
-            self.menu_active = None;
-            self.menu_selected = 0;
-        } else {
-            self.menu_active = Some(item);
-            self.menu_selected = 0;
-        }
-    }
-
-    /// 关闭菜单
-    pub fn close_menu(&mut self) {
-        self.menu_active = None;
-        self.menu_selected = 0;
-    }
-
-    /// 获取当前激活菜单的子项列表
-    pub fn menu_items(&self) -> Vec<(&'static str, Option<MenuAction>)> {
-        match self.menu_active {
-            Some(MenuItem::File) => vec![
-                ("Save", Some(MenuAction::Save)),
-                ("Save As...", None), // TODO
-                ("Quit", Some(MenuAction::Quit)),
-            ],
-            Some(MenuItem::Edit) => vec![
-                ("Undo", Some(MenuAction::Undo)),
-                ("Redo", Some(MenuAction::Redo)),
-                ("Delete", Some(MenuAction::Delete)),
-            ],
-            Some(MenuItem::View) => vec![
-                ("Expand All", Some(MenuAction::ExpandAll)),
-                ("Collapse All", Some(MenuAction::CollapseAll)),
-                ("Search", Some(MenuAction::Search)),
-            ],
-            Some(MenuItem::Tools) => vec![
-                ("Format", Some(MenuAction::Format)),
-                ("Fix JSON", Some(MenuAction::Fix)),
-                ("Diff...", None), // TODO
-            ],
-            Some(MenuItem::Help) => vec![
-                ("Shortcuts", Some(MenuAction::Shortcuts)),
-                ("About", Some(MenuAction::About)),
-            ],
-            None => vec![],
-        }
-    }
-
-    /// 执行菜单动作
-    pub fn execute_menu_action(&mut self, action: MenuAction) {
-        self.close_menu();
-        match action {
-            MenuAction::Save => self.try_save(),
-            MenuAction::Quit => self.should_quit = true,
-            MenuAction::Undo => self.undo(),
-            MenuAction::Redo => self.redo(),
-            MenuAction::Delete => self.delete_current(),
-            MenuAction::ExpandAll => {
-                self.expand_all();
-                self.set_status("已展开全部", StatusLevel::Info);
-            }
-            MenuAction::CollapseAll => {
-                self.collapse_all();
-                self.set_status("已折叠全部", StatusLevel::Info);
-            }
-            MenuAction::Search => self.start_search(),
-            MenuAction::Format => {
-                // 格式化当前文档
-                let content = crate::engine::format_pretty(&self.doc, &crate::engine::FormatOptions::default());
-                match serde_json::from_str::<serde_json::Value>(&content) {
-                    Ok(_) => {
-                        // 重新解析以应用格式
-                        if let Ok(parsed) = crate::engine::parse_lenient(&content) {
-                            self.snapshot();
-                            self.doc = parsed.value;
-                            self.modified = true;
-                            self.set_status("已格式化", StatusLevel::Info);
-                        }
-                    }
-                    Err(e) => self.set_status(&format!("格式化失败: {e}"), StatusLevel::Error),
-                }
-            }
-            MenuAction::Fix => {
-                // 修复 JSON
-                self.set_status("修复功能开发中", StatusLevel::Info);
-            }
-            MenuAction::Shortcuts => {
-                self.set_status(
-                    " 方向键:移动 Space:展开折叠 Enter:编辑 N:新建 Del:删除 Ctrl+S:保存 Ctrl+F:搜索 F1:帮助 ",
-                    StatusLevel::Info,
-                );
-            }
-            MenuAction::About => {
-                self.set_status(" je - JSON Editor v0.1 ", StatusLevel::Info);
-            }
-            MenuAction::SaveAs | MenuAction::Diff => {
-                self.set_status("该功能开发中", StatusLevel::Info);
-            }
-        }
-    }
 }
 
 /// 计算路径的父路径。
