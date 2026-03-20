@@ -1,6 +1,6 @@
 #![allow(clippy::unnested_or_patterns)]
 
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEventKind, MouseButton};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEventKind};
 use std::time::Instant;
 
 use super::app::{App, AppMode, ContextAction, StatusLevel};
@@ -378,7 +378,10 @@ fn handle_context_menu(app: &mut App, key: KeyEvent) {
 
 fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) {
     // 如果在右键菜单模式下，处理菜单内的鼠标移动和点击
-    if let AppMode::ContextMenu { mouse_x, mouse_y, .. } = &app.mode {
+    if let AppMode::ContextMenu {
+        mouse_x, mouse_y, ..
+    } = &app.mode
+    {
         let actions = ContextAction::all();
         let menu_width = 28i32;
         let menu_height = actions.len() as i32 + 2;
@@ -411,7 +414,8 @@ fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) {
         }
 
         // 处理左键点击
-        if event.kind == crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) {
+        if event.kind == crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
+        {
             if in_menu_area {
                 // 计算点击了哪一项（减去标题行）
                 let item_index = (click_y - menu_y - 1) as usize;
@@ -426,7 +430,9 @@ fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) {
             return;
         }
         // 右键点击菜单外也关闭
-        if event.kind == crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Right) {
+        if event.kind
+            == crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Right)
+        {
             app.close_context_menu();
             return;
         }
@@ -520,8 +526,7 @@ fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) {
         let key_region_end = toggle_width + line.display_key.len() + 2; // +2 for ": "
 
         // 键区域不为空（数组索引不能编辑 key）
-        let is_key_editable = !line.display_key.is_empty()
-            && !line.display_key.starts_with('[');
+        let is_key_editable = !line.display_key.is_empty() && !line.display_key.starts_with('[');
 
         if click_col < key_region_end && is_key_editable {
             // 双击键：编辑键名

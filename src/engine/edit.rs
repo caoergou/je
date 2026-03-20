@@ -93,12 +93,16 @@ pub fn rename_key(doc: &mut JsonValue, path: &str, new_key: &str) -> Result<(), 
     }
 
     let type_name = parent.type_name();
-    let map = parent.as_object_mut().ok_or(PathError::ExpectedObject { type_name })?;
+    let map = parent
+        .as_object_mut()
+        .ok_or(PathError::ExpectedObject { type_name })?;
 
     // 获取旧 key 的值
     let value = map
         .get(old_key)
-        .ok_or_else(|| PathError::KeyNotFound { key: old_key.into() })?
+        .ok_or_else(|| PathError::KeyNotFound {
+            key: old_key.into(),
+        })?
         .clone();
 
     // 删除旧 key 并插入新 key（保持顺序）

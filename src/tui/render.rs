@@ -406,9 +406,10 @@ fn render_confirm_overlay(frame: &mut Frame, area: Rect) {
             Style::default().fg(Color::Yellow),
         )),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("   [ Y ] 确认    [ N ] 取消   ", Style::default().fg(Color::White)),
-        ]),
+        Line::from(vec![Span::styled(
+            "   [ Y ] 确认    [ N ] 取消   ",
+            Style::default().fg(Color::White),
+        )]),
     ];
 
     let para = Paragraph::new(msg).block(
@@ -424,7 +425,13 @@ fn render_confirm_overlay(frame: &mut Frame, area: Rect) {
 // ── 右键菜单覆盖层 ───────────────────────────────────────────────────────────
 
 fn render_context_menu(frame: &mut Frame, app: &App, area: Rect) {
-    let AppMode::ContextMenu { selected, mouse_x, mouse_y, .. } = &app.mode else {
+    let AppMode::ContextMenu {
+        selected,
+        mouse_x,
+        mouse_y,
+        ..
+    } = &app.mode
+    else {
         return;
     };
 
@@ -433,7 +440,9 @@ fn render_context_menu(frame: &mut Frame, app: &App, area: Rect) {
     let menu_height = actions.len() as u16 + 2;
 
     // 菜单位置：鼠标点击位置（减去一些偏移让菜单在点击位置下方/旁边）
-    let menu_x = (*mouse_x as u16).saturating_sub(2).min(area.width.saturating_sub(menu_width + 2));
+    let menu_x = (*mouse_x as u16)
+        .saturating_sub(2)
+        .min(area.width.saturating_sub(menu_width + 2));
     let menu_y = (*mouse_y as u16).min(area.height.saturating_sub(menu_height + 2));
 
     if area.height < menu_y + menu_height + 2 || area.width < menu_x + menu_width + 2 {
