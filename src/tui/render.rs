@@ -440,10 +440,10 @@ fn render_context_menu(frame: &mut Frame, app: &App, area: Rect) {
     let menu_height = actions.len() as u16 + 2;
 
     // 菜单位置：鼠标点击位置（减去一些偏移让菜单在点击位置下方/旁边）
-    let menu_x = (*mouse_x as u16)
+    let menu_x = (*mouse_x)
         .saturating_sub(2)
         .min(area.width.saturating_sub(menu_width + 2));
-    let menu_y = (*mouse_y as u16).min(area.height.saturating_sub(menu_height + 2));
+    let menu_y = (*mouse_y).min(area.height.saturating_sub(menu_height + 2));
 
     if area.height < menu_y + menu_height + 2 || area.width < menu_x + menu_width + 2 {
         return;
@@ -468,7 +468,7 @@ fn render_context_menu(frame: &mut Frame, app: &App, area: Rect) {
         .enumerate()
         .map(|(i, action)| {
             let is_hovered = hover_row == Some(i);
-            let is_selected = !hover_row.is_some() && i == *selected;
+            let is_selected = hover_row.is_none() && i == *selected;
 
             let style = if is_hovered {
                 Style::default()

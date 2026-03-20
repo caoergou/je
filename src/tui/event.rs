@@ -393,8 +393,8 @@ fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) {
         let menu_x = saved_mouse_x - 2;
         let menu_y = saved_mouse_y;
 
-        let click_x = event.column as i32;
-        let click_y = event.row as i32;
+        let click_x = i32::from(event.column);
+        let click_y = i32::from(event.row);
 
         // 检查鼠标是否在菜单区域内，更新悬停状态
         let in_menu_area = click_x >= menu_x
@@ -403,7 +403,8 @@ fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) {
             && click_y < menu_y + menu_height;
 
         if in_menu_area {
-            let item_index = (click_y - menu_y - 1) as usize;
+            let diff = click_y - menu_y - 1;
+            let item_index = if diff < 0 { 0 } else { diff as usize };
             if item_index < actions.len() {
                 app.menu_hover_row = Some(item_index);
             }
@@ -418,7 +419,8 @@ fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) {
         {
             if in_menu_area {
                 // 计算点击了哪一项（减去标题行）
-                let item_index = (click_y - menu_y - 1) as usize;
+                let diff = click_y - menu_y - 1;
+                let item_index = if diff < 0 { 0 } else { diff as usize };
                 if item_index < actions.len() {
                     let action = actions[item_index];
                     app.execute_context_action(action);
@@ -500,11 +502,10 @@ fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) {
     let is_double_click = app
         .last_click_time
         .zip(app.last_click_row)
-        .map(|(time, prev_row)| {
-            let elapsed = now.duration_since(time).as_millis() as u64;
+        .is_some_and(|(time, prev_row)| {
+            let elapsed = u64::try_from(now.duration_since(time).as_millis()).unwrap_or(u64::MAX);
             prev_row == item_row && elapsed < DOUBLE_CLICK_MS
-        })
-        .unwrap_or(false);
+        });
 
     // 如果点击在展开/折叠区域，且节点有子节点，则切换展开/折叠
     if click_col < toggle_width && line.has_children && !is_double_click {
