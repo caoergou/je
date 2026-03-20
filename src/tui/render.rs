@@ -447,7 +447,9 @@ fn render_context_menu(frame: &mut Frame, app: &App, area: Rect) {
         height: menu_height,
     };
 
-    frame.render_widget(Clear, overlay_area);
+    // 填充不透明背景
+    let bg = Paragraph::new(" ").style(Style::default().bg(Color::Black));
+    frame.render_widget(bg, overlay_area);
 
     // 悬停效果优先于键盘选中
     let hover_row = app.menu_hover_row;
@@ -481,8 +483,10 @@ fn render_context_menu(frame: &mut Frame, app: &App, area: Rect) {
             Block::default()
                 .title(" Actions ")
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Blue)),
+                .border_style(Style::default().fg(Color::Blue))
+                .style(Style::default().bg(Color::Black)),
         )
+        .style(Style::default().bg(Color::Black))
         .highlight_style(Style::default());
 
     frame.render_widget(menu, overlay_area);
