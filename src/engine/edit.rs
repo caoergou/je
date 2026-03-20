@@ -63,6 +63,51 @@ pub fn delete(doc: &mut JsonValue, path: &str) -> Result<JsonValue, EditError> {
     }
 }
 
+/// 重命名指定路径的 key（仅适用于对象中的 key，不适用于数组索引）。
+pub fn rename_key(doc: &mut JsonValue, path: &str, new_key: &str) -> Result<(), EditError> {
+    let segments = parse_path(path)?;
+    if segments.is_empty() {
+        return Err(EditError::Path(PathError::InvalidSyntax(
+            "不能重命名根节点".into(),
+        )));
+    }
+
+    let (parent_segments, last) = segments.split_at(segments.len() - 1);
+    let parent = navigate_to_mut(doc, parent_segments)?;
+
+    // 获取要重命名的 key 名称
+    let old_key = match &last[0] {
+        PathSegment::Key(k) => k.as_str(),
+        PathSegment::Index(_) => {
+            return Err(EditError::Path(PathError::InvalidSyntax(
+                "数组索引不能重命名".into(),
+            )));
+        }
+    };
+
+    // 不能重命名空 key
+    if new_key.is_empty() {
+        return Err(EditError::Path(PathError::InvalidSyntax(
+            "key 不能为空".into(),
+        )));
+    }
+
+    let type_name = parent.type_name();
+    let map = parent.as_object_mut().ok_or(PathError::ExpectedObject { type_name })?;
+
+    // 获取旧 key 的值
+    let value = map
+        .get(old_key)
+        .ok_or_else(|| PathError::KeyNotFound { key: old_key.into() })?
+        .clone();
+
+    // 删除旧 key 并插入新 key（保持顺序）
+    map.shift_remove(old_key);
+    map.insert(new_key.into(), value);
+
+    Ok(())
+}
+
 /// 向数组末尾追加元素，或向对象合并新字段（已存在的 key 会被覆盖）。
 pub fn add(doc: &mut JsonValue, path: &str, value: JsonValue) -> Result<(), EditError> {
     let node = if path == "." || path.is_empty() {

@@ -71,16 +71,18 @@ je settings.json
 
 | Key | Action |
 |-----|--------|
-| `j` / `↓` | Move cursor down |
-| `k` / `↑` | Move cursor up |
-| `l` / `→` | Expand node |
-| `h` / `←` | Collapse node |
-| `e` | Edit current value |
-| `d` | Delete current node |
-| `u` | Undo |
-| `ctrl+r` | Redo |
-| `ctrl+s` | Save |
-| `q` | Quit |
+| `↑/↓` | Move up/down |
+| `←` | Collapse / go to parent |
+| `→` / `Space` | Expand / toggle |
+| `Enter` | Edit leaf node / expand container |
+| `N` / `Insert` | Add new node |
+| `Delete` | Delete current node |
+| `Ctrl+S` | Save |
+| `Ctrl+F` / `/` | Search |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Y` | Redo |
+| `F2` | Context menu |
+| `F1` | Help |
 
 ---
 

@@ -10,7 +10,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
 
-use super::app::{App, AppMode, StatusLevel};
+use super::app::{App, AppMode, ContextAction, StatusLevel};
 use super::tree::TreeLine;
 
 /// 每帧的主渲染入口。
@@ -27,9 +27,14 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     render_tree(frame, app, chunks[0], &lines);
     render_statusbar(frame, app, chunks[1], &lines);
 
-    // 编辑覆盖层
+    // 编辑覆盖层（值）
     if matches!(app.mode, AppMode::Edit { .. }) {
         render_edit_overlay(frame, app, area);
+    }
+
+    // 编辑覆盖层（键名）
+    if matches!(app.mode, AppMode::EditKey { .. }) {
+        render_edit_key_overlay(frame, app, area);
     }
 
     // 搜索覆盖层
@@ -45,6 +50,11 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     // 确认剥离注释覆盖层
     if matches!(app.mode, AppMode::ConfirmStripComments) {
         render_confirm_overlay(frame, area);
+    }
+
+    // 右键菜单覆盖层
+    if matches!(app.mode, AppMode::ContextMenu { .. }) {
+        render_context_menu(frame, app, area);
     }
 }
 
@@ -168,18 +178,14 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect, _lines: &[TreeLine
     } else {
         let hints = match &app.mode {
             AppMode::Normal => {
-                " j/k:移动  h/l:折叠/展开  e:编辑  d:删除  a:添加  /:搜索  u:撤销  ctrl+s:保存  q:退出"
+                " Alt:菜单 ↑↓:移动 ←:折叠 →/Space:展开 Enter:编辑 N:新建 Del:删除 Ctrl+S:保存 Ctrl+F:搜索 "
             }
-            AppMode::Edit { .. } => " Enter:确认  Esc:取消",
-            AppMode::Search { .. } => " 输入搜索内容  Enter:跳转下一匹配  Esc:退出",
-            AppMode::AddNode { is_array, .. } => {
-                if *is_array {
-                    " 输入值  Tab:切换  Enter:确认  Esc:取消"
-                } else {
-                    " 输入 key 和 value  Tab:切换焦点  Enter:确认  Esc:取消"
-                }
-            }
-            AppMode::ConfirmStripComments => " y:确认剥离注释并保存  n:取消",
+            AppMode::Edit { .. } => " 输入值  Enter:确认  Esc:取消",
+            AppMode::EditKey { .. } => " 输入新键名  Enter:确认  Esc:取消",
+            AppMode::Search { .. } => " 输入搜索  Enter:跳转下一匹配  Esc:退出",
+            AppMode::AddNode { .. } => " 输入字段名  Enter:确认  Esc:取消",
+            AppMode::ConfirmStripComments => " [Y]:确认保存  [N]:取消  ",
+            AppMode::ContextMenu { .. } => " ↑↓:选择  Enter:执行  F2:菜单  Esc:退出",
         };
         Line::from(vec![
             Span::styled(format!(" {path} "), Style::default().fg(Color::DarkGray)),
@@ -197,6 +203,7 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect, _lines: &[TreeLine
 fn render_edit_overlay(frame: &mut Frame, app: &App, area: Rect) {
     let AppMode::Edit {
         path,
+        value_type,
         buffer,
         cursor_pos,
     } = &app.mode
@@ -219,7 +226,7 @@ fn render_edit_overlay(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Clear, overlay_area);
 
     let display_buf = format!("{buffer} ");
-    let title = format!(" 编辑 {path} ");
+    let title = format!(" 编辑 {value_type} - {path} ");
 
     let para = Paragraph::new(display_buf)
         .block(
@@ -227,6 +234,51 @@ fn render_edit_overlay(frame: &mut Frame, app: &App, area: Rect) {
                 .title(Span::styled(title, Style::default().fg(Color::Yellow)))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Yellow)),
+        )
+        .style(Style::default().fg(Color::White));
+
+    frame.render_widget(para, overlay_area);
+
+    // 设置光标位置（+1 是边框偏移）
+    let cursor_x = overlay_area.x + 1 + (*cursor_pos as u16).min(overlay_area.width - 3);
+    let cursor_y = overlay_area.y + 1;
+    frame.set_cursor_position((cursor_x, cursor_y));
+}
+
+fn render_edit_key_overlay(frame: &mut Frame, app: &App, area: Rect) {
+    let AppMode::EditKey {
+        path,
+        buffer,
+        cursor_pos,
+        ..
+    } = &app.mode
+    else {
+        return;
+    };
+
+    // 覆盖层位置：底部 3 行
+    let overlay_height = 3u16;
+    if area.height < overlay_height + 2 {
+        return;
+    }
+    let overlay_area = Rect {
+        x: area.x + 1,
+        y: area.y + area.height - overlay_height - 1,
+        width: area.width.saturating_sub(2),
+        height: overlay_height,
+    };
+
+    frame.render_widget(Clear, overlay_area);
+
+    let display_buf = format!("{buffer} ");
+    let title = format!(" 重命名键 {path} ");
+
+    let para = Paragraph::new(display_buf)
+        .block(
+            Block::default()
+                .title(Span::styled(title, Style::default().fg(Color::Cyan)))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
         )
         .style(Style::default().fg(Color::White));
 
@@ -283,18 +335,16 @@ fn render_search_overlay(frame: &mut Frame, app: &App, area: Rect) {
 fn render_add_node_overlay(frame: &mut Frame, app: &App, area: Rect) {
     let AppMode::AddNode {
         parent_path,
-        is_array,
+        is_array: _,
         key_buffer,
-        value_buffer,
-        focus_on_key,
         key_cursor,
-        value_cursor,
     } = &app.mode
     else {
         return;
     };
 
-    let overlay_height = if *is_array { 4u16 } else { 5u16 };
+    // 对象模式：只输入 key
+    let overlay_height = 3u16;
     if area.height < overlay_height + 2 {
         return;
     }
@@ -307,114 +357,31 @@ fn render_add_node_overlay(frame: &mut Frame, app: &App, area: Rect) {
 
     frame.render_widget(Clear, overlay_area);
 
-    if *is_array {
-        // 数组模式：只显示 value
-        let value_cursor = *value_cursor;
-        let value_display = format!("{value_buffer} ");
-        let value_para = Paragraph::new(value_display)
-            .block(
-                Block::default()
-                    .title(Span::styled(
-                        " 添加到数组 ",
-                        Style::default().fg(Color::Green),
-                    ))
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Green)),
-            )
-            .style(Style::default().fg(Color::White));
+    let display_buf = format!(" {key_buffer} ");
+    let title = format!(" 添加字段到 {parent_path} ");
 
-        // 需要手动渲染来获取正确的区域
-        let value_area = overlay_area;
-        frame.render_widget(value_para, value_area);
+    let para = Paragraph::new(display_buf)
+        .block(
+            Block::default()
+                .title(Span::styled(title, Style::default().fg(Color::Green)))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Green)),
+        )
+        .style(Style::default().fg(Color::White));
 
-        // 显示父路径提示
-        let parent_hint = format!(" 父路径: {parent_path}");
-        let hint_para = Paragraph::new(parent_hint).style(Style::default().fg(Color::DarkGray));
-        let hint_area = Rect {
-            x: value_area.x + 1,
-            y: value_area.y + value_area.height - 1,
-            width: value_area.width - 2,
-            height: 1,
-        };
-        frame.render_widget(hint_para, hint_area);
+    frame.render_widget(para, overlay_area);
 
-        // 光标
-        let cursor_x = value_area.x + 1 + (value_cursor as u16).min(value_area.width - 3);
-        let cursor_y = value_area.y + 1;
-        frame.set_cursor_position((cursor_x, cursor_y));
-    } else {
-        // 对象模式：显示 key 和 value
-        let key_cursor = *key_cursor;
-        let value_cursor = *value_cursor;
-
-        // key 行
-        let key_label = if *focus_on_key { ">" } else { " " };
-        let key_display = format!("{key_label} {key_buffer} ");
-        let key_para = Paragraph::new(key_display)
-            .block(
-                Block::default()
-                    .title(" key ")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(if *focus_on_key {
-                        Color::Yellow
-                    } else {
-                        Color::DarkGray
-                    })),
-            )
-            .style(Style::default().fg(Color::White));
-
-        // value 行
-        let value_label = if *focus_on_key { " " } else { ">" };
-        let value_display = format!("{value_label} {value_buffer} ");
-        let value_para = Paragraph::new(value_display)
-            .block(
-                Block::default()
-                    .title(" value ")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(if *focus_on_key {
-                        Color::DarkGray
-                    } else {
-                        Color::Yellow
-                    })),
-            )
-            .style(Style::default().fg(Color::White));
-
-        // 使用垂直布局
-        let inner_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Length(3)])
-            .split(overlay_area);
-
-        frame.render_widget(key_para, inner_chunks[0]);
-        frame.render_widget(value_para, inner_chunks[1]);
-
-        // 光标位置
-        let (cursor_x, cursor_y, _max_chars) = if *focus_on_key {
-            (
-                inner_chunks[0].x
-                    + 2
-                    + (key_cursor as u16).min(inner_chunks[0].width.saturating_sub(4)),
-                inner_chunks[0].y + 1,
-                inner_chunks[0].width.saturating_sub(4),
-            )
-        } else {
-            (
-                inner_chunks[1].x
-                    + 2
-                    + (value_cursor as u16).min(inner_chunks[1].width.saturating_sub(4)),
-                inner_chunks[1].y + 1,
-                inner_chunks[1].width.saturating_sub(4),
-            )
-        };
-        frame.set_cursor_position((cursor_x, cursor_y));
-    }
+    // 光标位置
+    let cursor_x = overlay_area.x + 1 + (*key_cursor as u16).min(overlay_area.width - 3);
+    let cursor_y = overlay_area.y + 1;
+    frame.set_cursor_position((cursor_x, cursor_y));
 }
 
 // ── 确认覆盖层 ───────────────────────────────────────────────────────────────
 
 fn render_confirm_overlay(frame: &mut Frame, area: Rect) {
-    let overlay_height = 5u16;
-    let overlay_width = 60u16;
+    let overlay_height = 6u16;
+    let overlay_width = 50u16;
     if area.height < overlay_height + 2 || area.width < overlay_width + 2 {
         return;
     }
@@ -427,6 +394,7 @@ fn render_confirm_overlay(frame: &mut Frame, area: Rect) {
 
     frame.render_widget(Clear, overlay_area);
 
+    // 带按钮的确认框
     let msg = vec![
         Line::from(""),
         Line::from(Span::styled(
@@ -437,10 +405,10 @@ fn render_confirm_overlay(frame: &mut Frame, area: Rect) {
             "  保存后注释将被移除，是否继续？",
             Style::default().fg(Color::Yellow),
         )),
-        Line::from(Span::styled(
-            "  y 确认  /  n 取消",
-            Style::default().fg(Color::White),
-        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("   [ Y ] 确认    [ N ] 取消   ", Style::default().fg(Color::White)),
+        ]),
     ];
 
     let para = Paragraph::new(msg).block(
@@ -451,4 +419,71 @@ fn render_confirm_overlay(frame: &mut Frame, area: Rect) {
     );
 
     frame.render_widget(para, overlay_area);
+}
+
+// ── 右键菜单覆盖层 ───────────────────────────────────────────────────────────
+
+fn render_context_menu(frame: &mut Frame, app: &App, area: Rect) {
+    let AppMode::ContextMenu { selected, mouse_x, mouse_y, .. } = &app.mode else {
+        return;
+    };
+
+    let actions = ContextAction::all();
+    let menu_width = 28u16;
+    let menu_height = actions.len() as u16 + 2;
+
+    // 菜单位置：鼠标点击位置（减去一些偏移让菜单在点击位置下方/旁边）
+    let menu_x = (*mouse_x as u16).saturating_sub(2).min(area.width.saturating_sub(menu_width + 2));
+    let menu_y = (*mouse_y as u16).min(area.height.saturating_sub(menu_height + 2));
+
+    if area.height < menu_y + menu_height + 2 || area.width < menu_x + menu_width + 2 {
+        return;
+    }
+
+    let overlay_area = Rect {
+        x: area.x + menu_x,
+        y: area.y + menu_y,
+        width: menu_width,
+        height: menu_height,
+    };
+
+    frame.render_widget(Clear, overlay_area);
+
+    // 悬停效果优先于键盘选中
+    let hover_row = app.menu_hover_row;
+
+    let items: Vec<ListItem> = actions
+        .iter()
+        .enumerate()
+        .map(|(i, action)| {
+            let is_hovered = hover_row == Some(i);
+            let is_selected = !hover_row.is_some() && i == *selected;
+
+            let style = if is_hovered {
+                Style::default()
+                    .bg(Color::Blue)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else if is_selected {
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            ListItem::new(Span::styled(action.label(), style))
+        })
+        .collect();
+
+    let menu = List::new(items)
+        .block(
+            Block::default()
+                .title(" Actions ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Blue)),
+        )
+        .highlight_style(Style::default());
+
+    frame.render_widget(menu, overlay_area);
 }
