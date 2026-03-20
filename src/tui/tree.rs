@@ -117,8 +117,9 @@ pub(crate) fn child_path_key(parent: &str, key: &str) -> String {
 }
 
 /// 值的单行预览，长度截断至 60 字符。
+#[allow(clippy::cast_possible_truncation)]
 fn preview(value: &JsonValue) -> String {
-    let s = match value {
+    match value {
         JsonValue::Null => "null".into(),
         JsonValue::Bool(b) => b.to_string(),
         JsonValue::Number(n) => {
@@ -143,8 +144,7 @@ fn preview(value: &JsonValue) -> String {
                 format!("[…{} items]", a.len())
             }
         }
-    };
-    s
+    }
 }
 
 fn truncate(s: &str, max: usize) -> String {

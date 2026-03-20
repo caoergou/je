@@ -6,11 +6,10 @@ mod tree;
 use std::{io, path::PathBuf, time::Duration};
 
 use crossterm::{
-    event as ct_event,
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    event as ct_event, execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
 
 pub use app::App;
 
@@ -27,7 +26,7 @@ fn run_loop(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
     // 初始化终端
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, ct_event::EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -35,7 +34,11 @@ fn run_loop(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
 
     // 无论是否出错，都要清理终端
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        ct_event::DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     result
@@ -50,7 +53,7 @@ fn event_loop(
 
         if ct_event::poll(Duration::from_millis(50))? {
             let evt = ct_event::read()?;
-            event::handle_event(app, evt);
+            event::handle_event(app, &evt);
         }
 
         if app.should_quit {

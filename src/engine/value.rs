@@ -29,32 +29,63 @@ impl JsonValue {
         }
     }
 
+    #[allow(dead_code)]
     pub fn as_bool(&self) -> Option<bool> {
-        if let Self::Bool(b) = self { Some(*b) } else { None }
+        if let Self::Bool(b) = self {
+            Some(*b)
+        } else {
+            None
+        }
     }
 
+    #[allow(dead_code)]
     pub fn as_f64(&self) -> Option<f64> {
-        if let Self::Number(n) = self { Some(*n) } else { None }
+        if let Self::Number(n) = self {
+            Some(*n)
+        } else {
+            None
+        }
     }
 
+    #[allow(dead_code)]
     pub fn as_str(&self) -> Option<&str> {
-        if let Self::String(s) = self { Some(s) } else { None }
+        if let Self::String(s) = self {
+            Some(s)
+        } else {
+            None
+        }
     }
 
     pub fn as_array(&self) -> Option<&[JsonValue]> {
-        if let Self::Array(a) = self { Some(a) } else { None }
+        if let Self::Array(a) = self {
+            Some(a)
+        } else {
+            None
+        }
     }
 
     pub fn as_object(&self) -> Option<&IndexMap<String, JsonValue>> {
-        if let Self::Object(o) = self { Some(o) } else { None }
+        if let Self::Object(o) = self {
+            Some(o)
+        } else {
+            None
+        }
     }
 
     pub fn as_array_mut(&mut self) -> Option<&mut Vec<JsonValue>> {
-        if let Self::Array(a) = self { Some(a) } else { None }
+        if let Self::Array(a) = self {
+            Some(a)
+        } else {
+            None
+        }
     }
 
     pub fn as_object_mut(&mut self) -> Option<&mut IndexMap<String, JsonValue>> {
-        if let Self::Object(o) = self { Some(o) } else { None }
+        if let Self::Object(o) = self {
+            Some(o)
+        } else {
+            None
+        }
     }
 
     /// 返回数组的长度或对象的 key 数量；非容器类型返回 `None`。
@@ -67,8 +98,14 @@ impl JsonValue {
     }
 
     /// 容器为空时返回 `true`，非容器类型返回 `false`。
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
-        self.len().map_or(false, |n| n == 0)
+        // 容器为空时返回 true，非容器类型返回 false
+        if let Some(n) = self.len() {
+            n == 0
+        } else {
+            false
+        }
     }
 }
 
@@ -92,6 +129,7 @@ impl fmt::Display for JsonValue {
 }
 
 /// 将 f64 格式化为合法的 JSON 数字字符串。
+#[allow(clippy::cast_possible_truncation)]
 fn fmt_number(n: f64, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     if n.is_nan() || n.is_infinite() {
         // JSON 不支持 NaN/Infinity，降级为 null
@@ -114,7 +152,8 @@ pub(crate) fn escape_str(s: &str) -> String {
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
             c if (c as u32) < 0x20 => {
-                out.push_str(&format!("\\u{:04x}", c as u32));
+                use std::fmt::Write;
+                write!(out, "\\u{:04x}", c as u32).unwrap();
             }
             c => out.push(c),
         }
@@ -129,9 +168,7 @@ impl From<serde_json::Value> for JsonValue {
             serde_json::Value::Bool(b) => Self::Bool(b),
             serde_json::Value::Number(n) => Self::Number(n.as_f64().unwrap_or(0.0)),
             serde_json::Value::String(s) => Self::String(s),
-            serde_json::Value::Array(arr) => {
-                Self::Array(arr.into_iter().map(Self::from).collect())
-            }
+            serde_json::Value::Array(arr) => Self::Array(arr.into_iter().map(Self::from).collect()),
             serde_json::Value::Object(map) => {
                 let mut imap = IndexMap::with_capacity(map.len());
                 for (k, v) in map {
@@ -191,7 +228,7 @@ mod tests {
 
         #[test]
         fn float_number_preserves_decimal() {
-            assert_eq!(JsonValue::Number(3.14).to_string(), "3.14");
+            assert_eq!(JsonValue::Number(2.5).to_string(), "2.5");
         }
 
         #[test]

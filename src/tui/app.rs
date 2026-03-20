@@ -1,12 +1,14 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::collections::HashSet;
+use std::path::PathBuf;
 
 use ratatui::widgets::ListState;
 
 use crate::engine::{
-    delete, format_pretty, parse_lenient, set, FormatOptions, JsonValue,
+    FormatOptions, JsonValue, add as engine_add, delete as engine_delete, format_pretty, get,
+    parse_lenient, set,
 };
 
-use super::tree::{flatten, TreeLine};
+use super::tree::{TreeLine, flatten};
 
 /// TUI 的交互模式。
 #[derive(Debug, Clone, PartialEq)]
@@ -24,10 +26,34 @@ pub enum AppMode {
     },
     /// 等待确认剥离注释。
     ConfirmStripComments,
+    /// 搜索模式。
+    Search {
+        /// 搜索查询字符串。
+        query: String,
+        /// 光标在查询字符串中的位置。
+        cursor_pos: usize,
+    },
+    /// 添加节点模式。
+    AddNode {
+        /// 父节点的路径。
+        parent_path: String,
+        /// 父节点是否为数组。
+        is_array: bool,
+        /// key 缓冲区（数组模式不使用）。
+        key_buffer: String,
+        /// value 缓冲区。
+        value_buffer: String,
+        /// 当前焦点在 key 还是 value。
+        focus_on_key: bool,
+        /// 光标在 key 缓冲区的位置。
+        key_cursor: usize,
+        /// 光标在 value 缓冲区的位置。
+        value_cursor: usize,
+    },
 }
 
 /// 状态消息的级别。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusLevel {
     Info,
     Warn,
@@ -36,8 +62,11 @@ pub enum StatusLevel {
 
 /// 应用整体状态。
 pub struct App {
+    /// 文档树。
     pub doc: JsonValue,
+    /// 当前文件路径。
     pub file_path: PathBuf,
+    /// 是否已修改。
     pub modified: bool,
     /// 是否含有注释（JSONC 格式），保存前需确认。
     pub has_comments: bool,
@@ -67,12 +96,13 @@ impl App {
             .map_err(|e| format!("无法读取 '{}': {e}", path.display()))?;
 
         let has_comments = content.contains("//") || content.contains("/*");
-        let output = parse_lenient(&content)
-            .map_err(|e| format!("解析失败: {e}"))?;
+        let output = parse_lenient(&content).map_err(|e| format!("解析失败: {e}"))?;
 
         // 默认展开根节点
         let mut expanded = HashSet::new();
-        expanded.insert(".".into());
+        if matches!(output.value, JsonValue::Object(_) | JsonValue::Array(_)) {
+            expanded.insert(".".into());
+        }
 
         let mut list_state = ListState::default();
         list_state.select(Some(0));
@@ -99,6 +129,7 @@ impl App {
     }
 
     /// 当前选中的树行（如果存在）。
+    #[allow(dead_code)]
     pub fn current_line<'a>(&self, lines: &'a [TreeLine]) -> Option<&'a TreeLine> {
         lines.get(self.cursor)
     }
@@ -179,16 +210,20 @@ impl App {
     // ── 编辑 ──────────────────────────────────────────────────────────────────
 
     /// 进入编辑模式，仅对基本类型节点有效。
+    #[allow(clippy::cast_possible_truncation)]
     pub fn start_edit(&mut self) {
         let lines = self.tree_lines();
         let Some(line) = lines.get(self.cursor) else {
             return;
         };
         if line.path.starts_with("__close__") || line.has_children {
-            self.set_status("只能编辑基本类型的值（string/number/boolean/null）", StatusLevel::Warn);
+            self.set_status(
+                "只能编辑基本类型的值（string/number/boolean/null）",
+                StatusLevel::Warn,
+            );
             return;
         }
-        let current_val = match crate::engine::get(&self.doc, &line.path) {
+        let current_val = match get(&self.doc, &line.path) {
             Ok(v) => match v {
                 JsonValue::String(s) => s.clone(),
                 JsonValue::Bool(b) => b.to_string(),
@@ -254,7 +289,7 @@ impl App {
         }
         let path = line.path.clone();
         self.snapshot();
-        match delete(&mut self.doc, &path) {
+        match engine_delete(&mut self.doc, &path) {
             Ok(_) => {
                 self.modified = true;
                 // 光标不超出新范围
@@ -329,6 +364,151 @@ impl App {
         }
     }
 
+    // ── 搜索 ──────────────────────────────────────────────────────────────────
+
+    /// 进入搜索模式。
+    pub fn start_search(&mut self) {
+        self.mode = AppMode::Search {
+            query: String::new(),
+            cursor_pos: 0,
+        };
+    }
+
+    /// 跳转到下一个匹配项。
+    pub fn search_next(&mut self) {
+        let AppMode::Search { query, .. } = &self.mode else {
+            return;
+        };
+        if query.is_empty() {
+            return;
+        }
+
+        let lines = self.tree_lines();
+        let q = query.to_lowercase();
+
+        // 从当前位置往后找
+        for (i, line) in lines.iter().enumerate().skip(self.cursor + 1) {
+            if line.display_key.to_lowercase().contains(&q)
+                || line.value_preview.to_lowercase().contains(&q)
+            {
+                self.cursor = i;
+                self.list_state.select(Some(i));
+                return;
+            }
+        }
+
+        // 循环到开头继续找
+        for (i, line) in lines.iter().enumerate().take(self.cursor + 1) {
+            if line.display_key.to_lowercase().contains(&q)
+                || line.value_preview.to_lowercase().contains(&q)
+            {
+                self.cursor = i;
+                self.list_state.select(Some(i));
+                return;
+            }
+        }
+    }
+
+    /// 取消搜索。
+    pub fn cancel_search(&mut self) {
+        self.mode = AppMode::Normal;
+    }
+
+    // ── 添加节点 ─────────────────────────────────────────────────────────────
+
+    /// 进入添加节点模式。
+    pub fn start_add_node(&mut self) {
+        let lines = self.tree_lines();
+        let Some(line) = lines.get(self.cursor) else {
+            return;
+        };
+
+        // 确定父节点路径
+        let parent_path = if line.has_children && line.is_expanded {
+            line.path.clone()
+        } else {
+            parent_path(&line.path)
+        };
+
+        // 判断父节点类型
+        let is_array = matches!(get(&self.doc, &parent_path), Ok(JsonValue::Array(_)));
+
+        self.mode = AppMode::AddNode {
+            parent_path,
+            is_array,
+            key_buffer: String::new(),
+            value_buffer: String::new(),
+            focus_on_key: !is_array, // 数组模式不需要 key
+            key_cursor: 0,
+            value_cursor: 0,
+        };
+    }
+
+    /// 确认添加节点。
+    pub fn confirm_add_node(&mut self) {
+        let AppMode::AddNode {
+            parent_path,
+            is_array,
+            key_buffer,
+            value_buffer,
+            ..
+        } = &self.mode.clone()
+        else {
+            return;
+        };
+
+        // 解析值
+        let new_value: JsonValue = match serde_json::from_str::<serde_json::Value>(value_buffer) {
+            Ok(v) => JsonValue::from(v),
+            Err(_) => JsonValue::String(value_buffer.clone()),
+        };
+
+        self.snapshot();
+
+        // 构建目标路径
+        let target_path = if *is_array {
+            // 追加到数组
+            parent_path.clone()
+        } else {
+            // 添加到对象
+            if key_buffer.is_empty() {
+                self.set_status("需要输入 key", StatusLevel::Error);
+                return;
+            }
+            if parent_path == "." {
+                format!(".{key_buffer}")
+            } else {
+                format!("{parent_path}.{key_buffer}")
+            }
+        };
+
+        // 添加
+        if let Err(e) = engine_add(&mut self.doc, &target_path, new_value) {
+            self.set_status(&format!("添加失败: {e}"), StatusLevel::Error);
+            return;
+        }
+
+        self.modified = true;
+        self.mode = AppMode::Normal;
+
+        // 展开父节点
+        self.expanded.insert(parent_path.clone());
+
+        // 找到新添加的节点并选中
+        let lines = self.tree_lines();
+        if let Some(idx) = lines.iter().position(|l| l.path == target_path) {
+            self.cursor = idx;
+            self.list_state.select(Some(idx));
+        }
+
+        self.set_status("已添加", StatusLevel::Info);
+    }
+
+    /// 取消添加节点。
+    pub fn cancel_add_node(&mut self) {
+        self.mode = AppMode::Normal;
+    }
+
     // ── 辅助 ──────────────────────────────────────────────────────────────────
 
     pub fn set_status(&mut self, msg: &str, level: StatusLevel) {
@@ -346,16 +526,16 @@ impl App {
     /// 获取当前选中节点的路径字符串，用于状态栏显示。
     pub fn current_path(&self) -> String {
         let lines = self.tree_lines();
-        lines
-            .get(self.cursor)
-            .map(|l| {
+        lines.get(self.cursor).map_or_else(
+            || ".".into(),
+            |l| {
                 if l.path.starts_with("__close__") {
                     l.path.trim_start_matches("__close__").to_string()
                 } else {
                     l.path.clone()
                 }
-            })
-            .unwrap_or_else(|| ".".into())
+            },
+        )
     }
 }
 
@@ -369,7 +549,11 @@ fn parent_path(path: &str) -> String {
     for i in (1..bytes.len()).rev() {
         if bytes[i] == b'.' || bytes[i] == b'[' {
             let parent = &path[..i];
-            return if parent.is_empty() { ".".into() } else { parent.into() };
+            return if parent.is_empty() {
+                ".".into()
+            } else {
+                parent.into()
+            };
         }
     }
     ".".into()

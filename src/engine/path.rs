@@ -61,9 +61,7 @@ pub fn parse_path(path: &str) -> Result<Path, PathError> {
                 }
                 let key = &path[start..pos];
                 if key.is_empty() {
-                    return Err(PathError::InvalidSyntax(format!(
-                        "第 {pos} 位置出现空 key"
-                    )));
+                    return Err(PathError::InvalidSyntax(format!("第 {pos} 位置出现空 key")));
                 }
                 segments.push(PathSegment::Key(key.to_string()));
             }
@@ -96,6 +94,8 @@ pub fn parse_path(path: &str) -> Result<Path, PathError> {
 }
 
 /// 将负索引或越界索引解析为实际的 `usize` 位置。
+#[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss)]
 pub(crate) fn resolve_index(idx: i64, len: usize) -> Result<usize, PathError> {
     if idx >= 0 {
         let u = idx as usize;
@@ -121,10 +121,8 @@ pub fn get<'a>(doc: &'a JsonValue, path: &str) -> Result<&'a JsonValue, PathErro
 }
 
 /// 在文档中查找路径对应的值（可变引用）。
-pub fn get_mut<'a>(
-    doc: &'a mut JsonValue,
-    path: &str,
-) -> Result<&'a mut JsonValue, PathError> {
+#[allow(dead_code)]
+pub fn get_mut<'a>(doc: &'a mut JsonValue, path: &str) -> Result<&'a mut JsonValue, PathError> {
     let segments = parse_path(path)?;
     navigate_mut(doc, &segments)
 }
@@ -159,6 +157,7 @@ fn navigate<'a>(node: &'a JsonValue, segments: &[PathSegment]) -> Result<&'a Jso
     }
 }
 
+#[allow(dead_code)]
 fn navigate_mut<'a>(
     node: &'a mut JsonValue,
     segments: &[PathSegment],
@@ -244,10 +243,7 @@ mod tests {
         fn array_index_parsed_correctly() {
             assert_eq!(
                 parse_path(".tags[0]").unwrap(),
-                vec![
-                    PathSegment::Key("tags".into()),
-                    PathSegment::Index(0),
-                ]
+                vec![PathSegment::Key("tags".into()), PathSegment::Index(0),]
             );
         }
 
@@ -255,10 +251,7 @@ mod tests {
         fn negative_index_parsed_correctly() {
             assert_eq!(
                 parse_path(".tags[-1]").unwrap(),
-                vec![
-                    PathSegment::Key("tags".into()),
-                    PathSegment::Index(-1),
-                ]
+                vec![PathSegment::Key("tags".into()), PathSegment::Index(-1),]
             );
         }
 

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -9,8 +10,12 @@ use clap::{Parser, Subcommand};
     version
 )]
 pub struct Cli {
-    /// 要操作的 JSON 文件
-    pub file: PathBuf,
+    /// 要操作的 JSON 文件（completions 子命令不需要此参数）
+    pub file: Option<PathBuf>,
+
+    /// 以 JSON 格式输出结果（适合机器解析）
+    #[arg(long, global = true)]
+    pub json: bool,
 
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -120,11 +125,10 @@ pub enum Command {
         /// 另一个 JSON 文件
         other: PathBuf,
     },
-}
 
-/// 全局输出选项，从环境变量或标志读取。
-#[derive(Debug, Clone, Default)]
-pub struct OutputOpts {
-    /// 以 JSON 格式输出结果 `{"ok":..., "value":...}`
-    pub json_output: bool,
+    /// 生成 shell 自动补全脚本
+    Completions {
+        /// Shell 类型
+        shell: Shell,
+    },
 }

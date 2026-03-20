@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 
 use crate::engine::{
-    path::{parse_path, resolve_index, PathError, PathSegment},
+    path::{PathError, PathSegment, parse_path, resolve_index},
     value::JsonValue,
 };
 
@@ -127,9 +127,7 @@ fn set_recursive(
             let JsonValue::Object(map) = node else {
                 unreachable!()
             };
-            let child = map
-                .entry(key.clone())
-                .or_insert(JsonValue::Null);
+            let child = map.entry(key.clone()).or_insert(JsonValue::Null);
             set_recursive(child, tail, value)
         }
         PathSegment::Index(idx) => {
@@ -217,7 +215,12 @@ mod tests {
         #[test]
         fn creates_intermediate_objects_automatically() {
             let mut doc = make_doc();
-            set(&mut doc, ".server.host", JsonValue::String("localhost".into())).unwrap();
+            set(
+                &mut doc,
+                ".server.host",
+                JsonValue::String("localhost".into()),
+            )
+            .unwrap();
             let host = doc
                 .as_object()
                 .unwrap()
@@ -234,7 +237,13 @@ mod tests {
         fn sets_array_element_by_index() {
             let mut doc = make_doc();
             set(&mut doc, ".tags[0]", JsonValue::String("go".into())).unwrap();
-            let tags = doc.as_object().unwrap().get("tags").unwrap().as_array().unwrap();
+            let tags = doc
+                .as_object()
+                .unwrap()
+                .get("tags")
+                .unwrap()
+                .as_array()
+                .unwrap();
             assert_eq!(tags[0].as_str(), Some("go"));
         }
 
@@ -261,7 +270,13 @@ mod tests {
         fn deletes_array_element_by_index() {
             let mut doc = make_doc();
             delete(&mut doc, ".tags[0]").unwrap();
-            let tags = doc.as_object().unwrap().get("tags").unwrap().as_array().unwrap();
+            let tags = doc
+                .as_object()
+                .unwrap()
+                .get("tags")
+                .unwrap()
+                .as_array()
+                .unwrap();
             assert_eq!(tags.len(), 1);
             assert_eq!(tags[0].as_str(), Some("cli"));
         }
@@ -270,7 +285,10 @@ mod tests {
         fn returns_error_on_missing_key() {
             let mut doc = make_doc();
             let err = delete(&mut doc, ".missing").unwrap_err();
-            assert!(matches!(err, EditError::Path(PathError::KeyNotFound { .. })));
+            assert!(matches!(
+                err,
+                EditError::Path(PathError::KeyNotFound { .. })
+            ));
         }
 
         #[test]
@@ -287,7 +305,13 @@ mod tests {
         fn appends_to_array() {
             let mut doc = make_doc();
             add(&mut doc, ".tags", JsonValue::String("go".into())).unwrap();
-            let tags = doc.as_object().unwrap().get("tags").unwrap().as_array().unwrap();
+            let tags = doc
+                .as_object()
+                .unwrap()
+                .get("tags")
+                .unwrap()
+                .as_array()
+                .unwrap();
             assert_eq!(tags.len(), 3);
             assert_eq!(tags[2].as_str(), Some("go"));
         }

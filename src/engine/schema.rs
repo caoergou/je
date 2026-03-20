@@ -66,10 +66,7 @@ fn infer_array_schema(arr: &[JsonValue], depth: usize) -> String {
     format!("[{}]", parts.join(" | "))
 }
 
-fn infer_object_schema(
-    map: &indexmap::IndexMap<String, JsonValue>,
-    depth: usize,
-) -> String {
+fn infer_object_schema(map: &indexmap::IndexMap<String, JsonValue>, depth: usize) -> String {
     let fields = infer_object_fields(map, depth);
     format_object_fields(&fields)
 }
@@ -87,10 +84,7 @@ fn format_object_fields(fields: &indexmap::IndexMap<String, String>) -> String {
     if fields.is_empty() {
         return "{}".into();
     }
-    let inner: Vec<String> = fields
-        .iter()
-        .map(|(k, v)| format!("{k}: {v}"))
-        .collect();
+    let inner: Vec<String> = fields.iter().map(|(k, v)| format!("{k}: {v}")).collect();
     format!("{{{}}}", inner.join(", "))
 }
 
@@ -139,10 +133,7 @@ mod tests {
 
         #[test]
         fn heterogeneous_array_uses_union_type() {
-            let v = JsonValue::Array(vec![
-                JsonValue::String("a".into()),
-                JsonValue::Number(1.0),
-            ]);
+            let v = JsonValue::Array(vec![JsonValue::String("a".into()), JsonValue::Number(1.0)]);
             let s = infer_schema(&v);
             assert!(s.contains("string"));
             assert!(s.contains("number"));

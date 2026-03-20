@@ -1,6 +1,6 @@
 use crate::engine::{
-    format::{format_pretty, FormatOptions},
-    parser::{parse_lenient, ParseError, Repair},
+    format::{FormatOptions, format_pretty},
+    parser::{ParseError, Repair, parse_lenient},
     value::JsonValue,
 };
 
@@ -16,11 +16,13 @@ pub struct FixResult {
 
 impl FixResult {
     /// 是否存在无法修复的错误。
+    #[allow(dead_code)]
     pub fn has_unfixable(&self) -> bool {
         !self.errors.is_empty()
     }
 
     /// 是否进行了任何修复。
+    #[allow(dead_code)]
     pub fn was_repaired(&self) -> bool {
         !self.repairs.is_empty()
     }
@@ -30,6 +32,7 @@ impl FixResult {
 ///
 /// 使用宽松解析器解析，收集修复记录，然后将结果格式化回合法 JSON。
 /// 无法修复的错误会记录在 `FixResult::errors` 中。
+#[allow(dead_code)]
 pub fn fix(input: &str) -> FixResult {
     match parse_lenient(input) {
         Ok(output) => {

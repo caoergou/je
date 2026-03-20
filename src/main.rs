@@ -5,22 +5,39 @@ mod tui;
 
 use clap::Parser;
 
-use crate::cli::Cli;
+use crate::cli::{Cli, Command};
 
 fn main() {
     let cli = Cli::parse();
+    let json_output = cli.json;
 
     match cli.command {
-        Some(cmd) => {
-            // 命令模式：Agent 友好，最小化输出
-            command::run(&cli.file, cmd);
+        // completions 不需要文件参数
+        Some(Command::Completions { shell }) => {
+            use clap::CommandFactory;
+            use clap_complete::generate;
+            let mut cmd = Cli::command();
+            generate(shell, &mut cmd, "je", &mut std::io::stdout());
         }
+
+        Some(cmd) => {
+            let file = require_file(cli.file);
+            command::run(&file, cmd, json_output);
+        }
+
         None => {
-            // TUI 模式：人类交互编辑器
-            if let Err(e) = tui::run_tui(cli.file) {
+            let file = require_file(cli.file);
+            if let Err(e) = tui::run_tui(file) {
                 eprintln!("TUI 错误：{e}");
                 std::process::exit(1);
             }
         }
     }
+}
+
+fn require_file(file: Option<std::path::PathBuf>) -> std::path::PathBuf {
+    file.unwrap_or_else(|| {
+        eprintln!("错误：需要指定 JSON 文件路径");
+        std::process::exit(1);
+    })
 }

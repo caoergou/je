@@ -1,4 +1,4 @@
-use crate::engine::value::{escape_str, JsonValue};
+use crate::engine::value::{JsonValue, escape_str};
 
 /// 格式化选项。
 #[derive(Debug, Clone)]
@@ -141,6 +141,7 @@ fn write_compact(value: &JsonValue, out: &mut String) {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn fmt_number(n: f64) -> String {
     if n.is_nan() || n.is_infinite() {
         "null".into()

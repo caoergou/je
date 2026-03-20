@@ -1,3 +1,5 @@
+#![allow(clippy::unnested_or_patterns)]
+
 use indexmap::IndexMap;
 
 use crate::engine::value::JsonValue;
@@ -6,6 +8,7 @@ use crate::engine::value::JsonValue;
 #[derive(Debug, Clone)]
 pub struct Repair {
     pub line: usize,
+    #[allow(dead_code)]
     pub col: usize,
     pub description: String,
 }
@@ -32,7 +35,9 @@ pub enum ParseError {
     UnterminatedString { line: usize, col: usize },
 }
 
-/// 严格模式解析：使用 serde_json，仅接受合法 JSON。
+/// 严格模式解析：使用 `serde_json`，仅接受合法 JSON。
+#[allow(dead_code)]
+#[allow(clippy::missing_panics_doc)]
 pub fn parse_strict(input: &str) -> Result<JsonValue, ParseError> {
     let v: serde_json::Value =
         serde_json::from_str(input).map_err(|e| ParseError::UnexpectedChar {
@@ -417,10 +422,8 @@ impl<'a> LenientParser<'a> {
             }
         }
 
-        let num_str =
-            std::str::from_utf8(&self.input[start..self.pos]).map_err(|_| {
-                ParseError::InvalidNumber { line, col }
-            })?;
+        let num_str = std::str::from_utf8(&self.input[start..self.pos])
+            .map_err(|_| ParseError::InvalidNumber { line, col })?;
 
         let n: f64 = num_str
             .parse()
@@ -552,7 +555,7 @@ mod tests {
 
         #[test]
         fn accepts_trailing_comma_in_array() {
-            let out = parse_lenient(r#"[1, 2,]"#).unwrap();
+            let out = parse_lenient(r"[1, 2,]").unwrap();
             assert_eq!(out.value.as_array().unwrap().len(), 2);
         }
 
