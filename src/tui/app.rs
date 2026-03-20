@@ -543,7 +543,7 @@ impl App {
                 // 复制 key（如果是对象键）
                 let key = &line.display_key;
                 if !key.is_empty() {
-                    if let Err(e) = self.copy_to_clipboard(key) {
+                    if let Err(e) = copy_to_clipboard(key) {
                         self.set_status(&format!("复制失败：{e}"), StatusLevel::Error);
                     } else {
                         self.set_status(&format!("已复制 key: {key}"), StatusLevel::Info);
@@ -557,7 +557,7 @@ impl App {
                 // 复制 value
                 let value = &line.value_preview;
                 if !value.is_empty() {
-                    if let Err(e) = self.copy_to_clipboard(value) {
+                    if let Err(e) = copy_to_clipboard(value) {
                         self.set_status(&format!("复制失败：{e}"), StatusLevel::Error);
                     } else {
                         self.set_status("已复制 value", StatusLevel::Info);
@@ -570,7 +570,7 @@ impl App {
             ContextAction::CopyPath => {
                 // 复制 JSONPath
                 let path = format!("$.{}", line.path.strip_prefix('.').unwrap_or(&line.path));
-                if let Err(e) = self.copy_to_clipboard(&path) {
+                if let Err(e) = copy_to_clipboard(&path) {
                     self.set_status(&format!("复制失败：{e}"), StatusLevel::Error);
                 } else {
                     self.set_status(&format!("已复制路径: {path}"), StatusLevel::Info);
@@ -591,7 +591,7 @@ impl App {
     }
 
     /// 复制文本到系统剪贴板（跨平台）。
-    fn copy_to_clipboard(&self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn copy_to_clipboard(text: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut clipboard = arboard::Clipboard::new()?;
         clipboard.set_text(text)?;
         Ok(())
