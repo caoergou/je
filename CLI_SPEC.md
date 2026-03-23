@@ -346,9 +346,12 @@ jed convert yaml config.json
 # 输出 YAML 格式内容到 stdout
 ```
 
-当前支持的格式：`yaml`
+支持的格式：`yaml`、`toml`
 
-> TOML 转换尚未实现。
+```bash
+jed convert toml config.json
+# 输出 TOML 格式内容到 stdout
+```
 
 ---
 
@@ -358,11 +361,14 @@ jed convert yaml config.json
 
 ```bash
 jed validate schema.json data.json
-# 校验通过：输出 {"valid": true, ...}
-# 校验失败：输出缺少的必填字段，exit 1
+# 校验通过：{"valid": true}
+# 校验失败：列出所有错误，exit 1
+#   .: missing required field 'name'
+#   .age: value 200 is greater than maximum 150
 ```
 
-> 当前仅检查 `required` 字段的存在性，完整 JSON Schema 验证尚未实现。
+支持的 JSON Schema 关键字：`type`、`required`、`properties`、`minimum`、`maximum`、
+`exclusiveMinimum`、`exclusiveMaximum`、`minLength`、`maxLength`、`minItems`、`maxItems`、`items`、`enum`。
 
 ---
 

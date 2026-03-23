@@ -2,10 +2,7 @@ use std::path::Path;
 
 use crate::{
     command::{exit_code, load_lenient, read_file},
-    engine::{
-        exists, get, infer_schema, parse_lenient, FormatOptions, JsonValue, PathError,
-        format_pretty,
-    },
+    engine::{DiffEntry, DiffKind, JsonValue, PathError, exists, get, infer_schema, parse_lenient, structural_diff},
     i18n::{get_locale, t_to},
     output::Ctx,
 };
@@ -220,61 +217,91 @@ pub fn cmd_check(file: &Path, ctx: &Ctx) -> Result<i32, Box<dyn std::error::Erro
     }
 }
 
-/// `diff <other>` — 对比两个 JSON 文件的差异。
+/// `diff <other>` — 对比两个 JSON 文件的结构差异。
 ///
-/// Exit codes: 0 = identical, 1 = has differences, non-zero on parse error.
+/// 退出码：0 = 相同，1 = 有差异，其他非零值表示解析错误。
 pub fn cmd_diff(file: &Path, other: &Path, ctx: &Ctx) -> Result<i32, Box<dyn std::error::Error>> {
     let (a, _) = load_lenient(file)?;
     let (b, _) = load_lenient(other)?;
 
-    let a_str = format_pretty(&a, &FormatOptions::default());
-    let b_str = format_pretty(&b, &FormatOptions::default());
+    let entries = structural_diff(&a, &b);
 
-    if a_str == b_str {
+    let file_a = file.display().to_string();
+    let file_b = other.display().to_string();
+
+    if entries.is_empty() {
         ctx.print_raw(serde_json::json!({"identical": true, "diff": []}));
         return Ok(exit_code::OK);
     }
 
-    let a_lines: Vec<&str> = a_str.lines().collect();
-    let b_lines: Vec<&str> = b_str.lines().collect();
-    let max = a_lines.len().max(b_lines.len());
-
-    let mut diff_lines: Vec<String> = Vec::new();
-    for i in 0..max {
-        match (a_lines.get(i), b_lines.get(i)) {
-            (Some(al), Some(bl)) if al == bl => {}
-            (Some(al), Some(bl)) => {
-                diff_lines.push(format!("- {al}"));
-                diff_lines.push(format!("+ {bl}"));
-            }
-            (Some(al), None) => diff_lines.push(format!("- {al}")),
-            (None, Some(bl)) => diff_lines.push(format!("+ {bl}")),
-            (None, None) => {}
-        }
-    }
-
-    let file_a = file.display().to_string();
-    let file_b = other.display().to_string();
     let actions = vec![
         format!("jed set <path> <value> {file_a}"),
         format!("jed set <path> <value> {file_b}"),
     ];
 
     if ctx.json {
-        let lines: Vec<serde_json::Value> = diff_lines
+        let diff_json: Vec<serde_json::Value> = entries
             .iter()
-            .map(|s| serde_json::Value::String(s.clone()))
+            .map(diff_entry_to_json)
             .collect();
         ctx.print_raw_with_actions(
-            serde_json::json!({"identical": false, "diff": lines}),
+            serde_json::json!({"identical": false, "diff": diff_json}),
             &actions,
         );
     } else {
-        for line in &diff_lines {
-            println!("{line}");
+        for entry in &entries {
+            match &entry.kind {
+                DiffKind::Removed(v) => println!("- {}: {v}", entry.path),
+                DiffKind::Added(v) => println!("+ {}: {v}", entry.path),
+                DiffKind::Changed { from, to } => {
+                    println!("- {}: {from}", entry.path);
+                    println!("+ {}: {to}", entry.path);
+                }
+            }
         }
     }
 
-    // Exit 1 = has differences (not an error, just a result)
+    // 退出码 1 = 有差异（非错误，只是结果）
     Ok(1)
+}
+
+fn diff_entry_to_json(entry: &DiffEntry) -> serde_json::Value {
+    match &entry.kind {
+        DiffKind::Removed(v) => serde_json::json!({
+            "op": "remove",
+            "path": entry.path,
+            "value": json_value_to_serde(v),
+        }),
+        DiffKind::Added(v) => serde_json::json!({
+            "op": "add",
+            "path": entry.path,
+            "value": json_value_to_serde(v),
+        }),
+        DiffKind::Changed { from, to } => serde_json::json!({
+            "op": "replace",
+            "path": entry.path,
+            "from": json_value_to_serde(from),
+            "to": json_value_to_serde(to),
+        }),
+    }
+}
+
+fn json_value_to_serde(v: &JsonValue) -> serde_json::Value {
+    match v {
+        JsonValue::Null => serde_json::Value::Null,
+        JsonValue::Bool(b) => serde_json::Value::Bool(*b),
+        JsonValue::Number(n) => serde_json::Number::from_f64(*n)
+            .map_or(serde_json::Value::Null, serde_json::Value::Number),
+        JsonValue::String(s) => serde_json::Value::String(s.clone()),
+        JsonValue::Array(arr) => {
+            serde_json::Value::Array(arr.iter().map(json_value_to_serde).collect())
+        }
+        JsonValue::Object(map) => {
+            let mut obj = serde_json::Map::new();
+            for (k, val) in map {
+                obj.insert(k.clone(), json_value_to_serde(val));
+            }
+            serde_json::Value::Object(obj)
+        }
+    }
 }

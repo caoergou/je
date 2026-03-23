@@ -210,7 +210,7 @@ pub fn run_query(file: &Path, filter: &str, json: bool) {
     }
 }
 
-/// 运行 validate 命令（基础 JSON Schema 验证）
+/// 运行 validate 命令（JSON Schema 验证）
 pub fn run_validate(file: &Path, schema_file: &Path, json: bool) {
     let ctx = Ctx::new("validate", json);
     let locale = get_locale();
@@ -240,45 +240,222 @@ pub fn run_validate(file: &Path, schema_file: &Path, json: bool) {
     };
 
     let schema_val = parse_json(&schema_content);
-    if let JsonValue::Object(schema_obj) = schema_val
-        && let JsonValue::Object(doc_obj) = &doc
-        && let Some(JsonValue::Array(reqs)) = schema_obj.get("required")
-    {
-            let missing: Vec<String> = reqs
-                .iter()
-                .filter_map(|r| {
-                    if let JsonValue::String(key) = r && !doc_obj.contains_key(key) {
-                        return Some(key.clone());
-                    }
-                    None
-                })
-                .collect();
+    let mut errors: Vec<ValidationError> = Vec::new();
+    validate_against_schema(&doc, &schema_val, ".", &mut errors);
 
-            if missing.is_empty() {
-                ctx.print_raw_with_actions(
-                    serde_json::json!({
-                        "valid": true,
-                        "warning": "Only 'required' field presence was checked. Full JSON Schema validation is not yet implemented."
-                    }),
-                    &[format!("jed check {file_str}")],
-                );
-            } else {
-                let fix = "Add the missing required fields to the JSON file";
-                ctx.print_error(
-                    &format!("Missing required fields: {missing:?}"),
-                    Some(fix),
-                    &[format!("jed set .<field> <value> {file_str}")],
-                );
-                process::exit(exit_code::ERROR);
+    if errors.is_empty() {
+        ctx.print_raw_with_actions(
+            serde_json::json!({"valid": true}),
+            &[format!("jed check {file_str}")],
+        );
+    } else {
+        let error_list: Vec<serde_json::Value> = errors
+            .iter()
+            .map(|e| serde_json::json!({"path": e.path, "message": e.message}))
+            .collect();
+        let fix = "Fix the validation errors in the JSON file";
+        ctx.print_error(
+            &format!("{} validation error(s)", errors.len()),
+            Some(fix),
+            &[format!("jed set <path> <value> {file_str}")],
+        );
+        if json {
+            // --json 模式下通过 print_raw 输出结构化错误
+            ctx.print_raw(serde_json::json!({
+                "valid": false,
+                "errors": error_list,
+            }));
+        } else {
+            for e in &errors {
+                eprintln!("  {}: {}", e.path, e.message);
             }
-        return;
+        }
+        process::exit(exit_code::ERROR);
+    }
+}
+
+// ── JSON Schema 验证 ──────────────────────────────────────────────────────────
+
+struct ValidationError {
+    path: String,
+    message: String,
+}
+
+/// 递归地根据 JSON Schema 验证 `value`，收集所有验证错误。
+///
+/// 支持的关键字：`type`、`required`、`properties`、`minimum`、`maximum`、
+/// `minLength`、`maxLength`、`minItems`、`maxItems`、`items`、`enum`。
+fn validate_against_schema(
+    value: &JsonValue,
+    schema: &JsonValue,
+    path: &str,
+    errors: &mut Vec<ValidationError>,
+) {
+    let Some(schema_obj) = schema.as_object() else { return };
+
+    // type
+    if let Some(JsonValue::String(type_str)) = schema_obj.get("type") {
+        let matches = match type_str.as_str() {
+            "integer" => matches!(value, JsonValue::Number(n) if n.fract() == 0.0),
+            t => value.type_name() == t,
+        };
+        if !matches {
+            errors.push(ValidationError {
+                path: path.to_string(),
+                message: format!(
+                    "expected type '{}', got '{}'",
+                    type_str,
+                    value.type_name()
+                ),
+            });
+            return; // 类型不匹配时停止深入验证
+        }
     }
 
-    // Fallback: no required fields in schema
-    ctx.print_raw(serde_json::json!({
-        "valid": true,
-        "warning": "Only 'required' field presence was checked. Full JSON Schema validation is not yet implemented."
-    }));
+    // required
+    if let (Some(JsonValue::Array(reqs)), Some(obj)) =
+        (schema_obj.get("required"), value.as_object())
+    {
+        for req in reqs {
+            if let JsonValue::String(key) = req && !obj.contains_key(key.as_str()) {
+                errors.push(ValidationError {
+                    path: path.to_string(),
+                    message: format!("missing required field '{key}'"),
+                });
+            }
+        }
+    }
+
+    // properties
+    if let (Some(JsonValue::Object(props)), Some(obj)) =
+        (schema_obj.get("properties"), value.as_object())
+    {
+        for (key, prop_schema) in props {
+            if let Some(child_val) = obj.get(key.as_str()) {
+                let child_path = schema_child_path(path, key);
+                validate_against_schema(child_val, prop_schema, &child_path, errors);
+            }
+        }
+    }
+
+    // 数字、字符串、数组的类型特定验证委托给独立函数
+    if let JsonValue::Number(n) = value {
+        validate_number(*n, path, schema_obj, errors);
+    }
+    if let JsonValue::String(s) = value {
+        validate_string(s, path, schema_obj, errors);
+    }
+    if let JsonValue::Array(arr) = value {
+        validate_array(arr, path, schema_obj, errors);
+    }
+
+    // enum（枚举值）
+    if let Some(JsonValue::Array(enum_vals)) = schema_obj.get("enum") && !enum_vals.contains(value) {
+        let options: Vec<String> = enum_vals.iter().map(ToString::to_string).collect();
+        errors.push(ValidationError {
+            path: path.to_string(),
+            message: format!("value not in enum: [{}]", options.join(", ")),
+        });
+    }
+}
+
+fn validate_number(
+    n: f64,
+    path: &str,
+    schema_obj: &indexmap::IndexMap<String, JsonValue>,
+    errors: &mut Vec<ValidationError>,
+) {
+    if let Some(JsonValue::Number(min)) = schema_obj.get("minimum") && n < *min {
+        errors.push(ValidationError {
+            path: path.to_string(),
+            message: format!("value {n} is less than minimum {min}"),
+        });
+    }
+    if let Some(JsonValue::Number(max)) = schema_obj.get("maximum") && n > *max {
+        errors.push(ValidationError {
+            path: path.to_string(),
+            message: format!("value {n} is greater than maximum {max}"),
+        });
+    }
+    if let Some(JsonValue::Number(excl_min)) = schema_obj.get("exclusiveMinimum") && n <= *excl_min {
+        errors.push(ValidationError {
+            path: path.to_string(),
+            message: format!("value {n} must be greater than {excl_min}"),
+        });
+    }
+    if let Some(JsonValue::Number(excl_max)) = schema_obj.get("exclusiveMaximum") && n >= *excl_max {
+        errors.push(ValidationError {
+            path: path.to_string(),
+            message: format!("value {n} must be less than {excl_max}"),
+        });
+    }
+}
+
+fn validate_string(
+    s: &str,
+    path: &str,
+    schema_obj: &indexmap::IndexMap<String, JsonValue>,
+    errors: &mut Vec<ValidationError>,
+) {
+    let char_len = s.chars().count();
+    if let Some(JsonValue::Number(min)) = schema_obj.get("minLength") {
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        if char_len < min.max(0.0) as usize {
+            errors.push(ValidationError {
+                path: path.to_string(),
+                message: format!("string length {char_len} is less than minLength {min}"),
+            });
+        }
+    }
+    if let Some(JsonValue::Number(max)) = schema_obj.get("maxLength") {
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        if char_len > max.max(0.0) as usize {
+            errors.push(ValidationError {
+                path: path.to_string(),
+                message: format!("string length {char_len} is greater than maxLength {max}"),
+            });
+        }
+    }
+}
+
+fn validate_array(
+    arr: &[JsonValue],
+    path: &str,
+    schema_obj: &indexmap::IndexMap<String, JsonValue>,
+    errors: &mut Vec<ValidationError>,
+) {
+    if let Some(JsonValue::Number(min)) = schema_obj.get("minItems") {
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        if arr.len() < min.max(0.0) as usize {
+            errors.push(ValidationError {
+                path: path.to_string(),
+                message: format!("array has {} item(s), minimum is {min}", arr.len()),
+            });
+        }
+    }
+    if let Some(JsonValue::Number(max)) = schema_obj.get("maxItems") {
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        if arr.len() > max.max(0.0) as usize {
+            errors.push(ValidationError {
+                path: path.to_string(),
+                message: format!("array has {} item(s), maximum is {max}", arr.len()),
+            });
+        }
+    }
+    if let Some(items_schema) = schema_obj.get("items") {
+        for (i, item) in arr.iter().enumerate() {
+            let child_path = format!("{path}[{i}]");
+            validate_against_schema(item, items_schema, &child_path, errors);
+        }
+    }
+}
+
+fn schema_child_path(parent: &str, key: &str) -> String {
+    if parent == "." {
+        format!(".{key}")
+    } else {
+        format!("{parent}.{key}")
+    }
 }
 
 /// 运行 convert 命令（格式转换）
@@ -306,21 +483,62 @@ pub fn run_convert(file: &Path, format: &str, json: bool) {
                 print!("{yaml}");
             }
         }
-        "toml" => {
-            ctx.print_error(
-                "TOML output is not yet implemented",
-                Some("Use '--format yaml' instead, or convert manually"),
-                &[format!("jed convert yaml {file_str}")],
-            );
-            process::exit(exit_code::ERROR);
-        }
+        "toml" => match to_toml(&doc) {
+            Ok(toml_str) => {
+                if ctx.json {
+                    ctx.print_raw(serde_json::json!({"format": "toml", "content": toml_str}));
+                } else {
+                    print!("{toml_str}");
+                }
+            }
+            Err(e) => {
+                ctx.print_error(
+                    &format!("TOML conversion failed: {e}"),
+                    Some("Remove null values or use 'jed convert yaml' instead"),
+                    &[format!("jed convert yaml {file_str}")],
+                );
+                process::exit(exit_code::ERROR);
+            }
+        },
         other => {
             ctx.print_error(
-                &format!("Unknown format: '{other}'. Supported: yaml"),
-                Some("Use '--format yaml' for YAML output"),
+                &format!("Unknown format: '{other}'. Supported: yaml, toml"),
+                Some("Use 'yaml' or 'toml'"),
                 &[],
             );
             process::exit(exit_code::ERROR);
+        }
+    }
+}
+
+fn to_toml(value: &JsonValue) -> Result<String, String> {
+    let toml_val = json_to_toml_value(value)?;
+    toml::to_string_pretty(&toml_val).map_err(|e| e.to_string())
+}
+
+fn json_to_toml_value(value: &JsonValue) -> Result<toml::Value, String> {
+    match value {
+        JsonValue::Null => Ok(toml::Value::String("null".to_string())),
+        JsonValue::Bool(b) => Ok(toml::Value::Boolean(*b)),
+        JsonValue::Number(n) => {
+            if n.fract() == 0.0 && n.abs() < 9_007_199_254_740_992.0 {
+                #[allow(clippy::cast_possible_truncation)]
+                Ok(toml::Value::Integer(*n as i64))
+            } else {
+                Ok(toml::Value::Float(*n))
+            }
+        }
+        JsonValue::String(s) => Ok(toml::Value::String(s.clone())),
+        JsonValue::Array(arr) => {
+            let items: Result<Vec<_>, _> = arr.iter().map(json_to_toml_value).collect();
+            Ok(toml::Value::Array(items?))
+        }
+        JsonValue::Object(map) => {
+            let mut table = toml::map::Map::new();
+            for (k, v) in map {
+                table.insert(k.clone(), json_to_toml_value(v)?);
+            }
+            Ok(toml::Value::Table(table))
         }
     }
 }

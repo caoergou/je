@@ -140,8 +140,9 @@ jed tree file.json                  # display as indented tree
 jed tree -e file.json               # expand all nodes
 jed tree -p .servers file.json      # tree view of a sub-path
 jed query '.users[0]' file.json     # alias for get, with path-filter semantics
-jed validate schema.json file.json  # validate against JSON Schema (required fields)
+jed validate schema.json file.json  # validate against JSON Schema
 jed convert yaml file.json          # convert to YAML
+jed convert toml file.json          # convert to TOML
 ```
 
 ### Discovery
@@ -267,9 +268,9 @@ cargo build --release
 
 ### v1.x — Polish & Distribution
 - [ ] Shell completions documentation and testing (bash/zsh/fish)
-- [ ] `diff --json` structured output mode
-- [ ] TOML conversion (`jed convert toml`)
-- [ ] Full JSON Schema validation (beyond `required` field presence checking)
+- [x] `diff --json` structured output mode
+- [x] TOML conversion (`jed convert toml`)
+- [x] Full JSON Schema validation (`type`, `required`, `properties`, `minimum`, `maximum`, `minLength`, `maxLength`, `minItems`, `maxItems`, `items`, `enum`)
 - [ ] Package manager distribution: Homebrew, apt/deb, rpm
 
 ### v2.x — Power Features
