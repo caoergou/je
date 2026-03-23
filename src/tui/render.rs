@@ -12,20 +12,22 @@ use ratatui::{
 
 use super::app::{App, AppMode, ContextAction, StatusLevel};
 use super::tree::TreeLine;
+use crate::i18n::{get_locale, t_to};
 
 /// 每帧的主渲染入口。
 pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
     let lines = app.tree_lines();
 
-    // 布局：树形主区域 + 底部状态栏
+    // 布局：树形主区域 + 底部状态栏 + 快捷键提示条
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .constraints([Constraint::Min(1), Constraint::Length(1), Constraint::Length(1)])
         .split(area);
 
     render_tree(frame, app, chunks[0], &lines);
     render_statusbar(frame, app, chunks[1], &lines);
+    render_helpbar(frame, app, chunks[2]);
 
     // 编辑覆盖层（值）
     if matches!(app.mode, AppMode::Edit { .. }) {
@@ -50,6 +52,11 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     // 确认剥离注释覆盖层
     if matches!(app.mode, AppMode::ConfirmStripComments) {
         render_confirm_overlay(frame, area);
+    }
+
+    // 保存预览覆盖层
+    if matches!(app.mode, AppMode::ConfirmSave { .. }) {
+        render_save_preview(frame, app, area);
     }
 
     // 右键菜单覆盖层
@@ -170,31 +177,99 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect, _lines: &[TreeLine
             StatusLevel::Warn => Color::Yellow,
             StatusLevel::Error => Color::Red,
         };
-        Line::from(vec![
-            Span::styled(format!(" {path} "), Style::default().fg(Color::DarkGray)),
+        vec![
+            Span::styled(format!(" {path} ",), Style::default().fg(Color::DarkGray)),
             Span::styled("│", Style::default().fg(Color::DarkGray)),
-            Span::styled(format!(" {msg} "), Style::default().fg(color)),
-        ])
+            Span::styled(format!(" {msg} ",), Style::default().fg(color)),
+        ]
     } else {
-        let hints = match &app.mode {
-            AppMode::Normal => {
-                " Alt:菜单 ↑↓:移动 ←:折叠 →/Space:展开 Enter:编辑 N:新建 Del:删除 Ctrl+S:保存 Ctrl+F:搜索 "
-            }
-            AppMode::Edit { .. } => " 输入值  Enter:确认  Esc:取消",
-            AppMode::EditKey { .. } => " 输入新键名  Enter:确认  Esc:取消",
-            AppMode::Search { .. } => " 输入搜索  Enter:跳转下一匹配  Esc:退出",
-            AppMode::AddNode { .. } => " 输入字段名  Enter:确认  Esc:取消",
-            AppMode::ConfirmStripComments => " [Y]:确认保存  [N]:取消  ",
-            AppMode::ContextMenu { .. } => " ↑↓:选择  Enter:执行  F2:菜单  Esc:退出",
-        };
-        Line::from(vec![
-            Span::styled(format!(" {path} "), Style::default().fg(Color::DarkGray)),
-            Span::styled("│", Style::default().fg(Color::DarkGray)),
-            Span::styled(hints, Style::default().fg(Color::DarkGray)),
-        ])
+        vec![
+            Span::styled(format!(" {path} ",), Style::default().fg(Color::DarkGray)),
+        ]
     };
 
-    let bar = Paragraph::new(status_text).style(Style::default().bg(Color::Black));
+    let bar = Paragraph::new(Line::from(status_text))
+        .style(Style::default().bg(Color::Black));
+    frame.render_widget(bar, area);
+}
+
+/// 底部快捷键提示条
+fn render_helpbar(frame: &mut Frame, app: &App, area: Rect) {
+    let hints = match &app.mode {
+        AppMode::Normal => vec![
+            ("↑↓", "移动"),
+            ("Enter", "编辑"),
+            ("Space", "展开/折叠"),
+            ("N", "新建"),
+            ("Del", "删除"),
+            ("/", "搜索"),
+            ("Ctrl+S", "保存"),
+            ("Ctrl+Z", "撤销"),
+            ("Ctrl+R", "重做"),
+            ("Ctrl+Q", "退出×2"),
+            ("F1", "帮助"),
+        ],
+        AppMode::Edit { value_type, .. } => {
+            if *value_type == "boolean" {
+                vec![
+                    ("Tab", "切换"),
+                    ("Enter", "确认"),
+                    ("Esc", "取消"),
+                ]
+            } else {
+                vec![
+                    ("Enter", "确认"),
+                    ("Esc", "取消"),
+                ]
+            }
+        }
+        AppMode::EditKey { .. } => vec![
+            ("Enter", "确认"),
+            ("Esc", "取消"),
+        ],
+        AppMode::Search { .. } => vec![
+            ("Enter", "下一匹配"),
+            ("Esc", "退出"),
+        ],
+        AppMode::AddNode { .. } => vec![
+            ("Enter", "确认"),
+            ("Esc", "取消"),
+        ],
+        AppMode::ConfirmStripComments => vec![
+            ("Y", "确认"),
+            ("N", "取消"),
+        ],
+        AppMode::ConfirmSave { .. } => vec![
+            ("Enter", "保存"),
+            ("Esc", "取消"),
+        ],
+        AppMode::ContextMenu { .. } => vec![
+            ("↑↓", "选择"),
+            ("Enter", "执行"),
+            ("Esc", "退出"),
+        ],
+    };
+
+    // 构建提示条内容：每个快捷键用 [key] 形式显示
+    let mut spans: Vec<Span> = Vec::new();
+    for (i, (key, desc)) in hints.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled("  ", Style::default().fg(Color::DarkGray)));
+        }
+        spans.push(Span::styled(
+            format!("[{key}]"),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(
+            format!(" {desc}"),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+
+    let bar = Paragraph::new(Line::from(spans))
+        .style(Style::default().bg(Color::Black).fg(Color::White));
     frame.render_widget(bar, area);
 }
 
@@ -206,6 +281,8 @@ fn render_edit_overlay(frame: &mut Frame, app: &App, area: Rect) {
         value_type,
         buffer,
         cursor_pos,
+        detected_type,
+        parse_error,
     } = &app.mode
     else {
         return;
@@ -226,14 +303,33 @@ fn render_edit_overlay(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Clear, overlay_area);
 
     let display_buf = format!("{buffer} ");
-    let title = format!(" 编辑 {value_type} - {path} ");
+
+    // 根据检测结果决定边框颜色
+    let (border_color, type_info) = if parse_error.is_some() {
+        // 有解析错误，显示为字符串
+        (Color::DarkGray, t_to("tui.status.string_as_str", &get_locale()))
+    } else if let Some(detected) = detected_type {
+        if detected == "empty" {
+            (Color::Yellow, "empty".to_string())
+        } else if detected == value_type {
+            // 类型匹配
+            (Color::Green, format!("✓ {detected}"))
+        } else {
+            // 类型不匹配
+            (Color::Yellow, format!("⚠ {detected} (原类型: {value_type})"))
+        }
+    } else {
+        (Color::Yellow, value_type.to_string())
+    };
+
+    let title = format!(" 编辑 {value_type} - {path} [{}] ", type_info);
 
     let para = Paragraph::new(display_buf)
         .block(
             Block::default()
-                .title(Span::styled(title, Style::default().fg(Color::Yellow)))
+                .title(Span::styled(title, Style::default().fg(border_color)))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow)),
+                .border_style(Style::default().fg(border_color)),
         )
         .style(Style::default().fg(Color::White));
 
@@ -417,6 +513,94 @@ fn render_confirm_overlay(frame: &mut Frame, area: Rect) {
             .title(" 注意 ")
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow)),
+    );
+
+    frame.render_widget(para, overlay_area);
+}
+
+// ── 保存预览覆盖层 ───────────────────────────────────────────────────────────
+
+fn render_save_preview(frame: &mut Frame, app: &App, area: Rect) {
+    let AppMode::ConfirmSave { original_content } = &app.mode else {
+        return;
+    };
+
+    let locale = get_locale();
+    let new_content = app.get_new_content();
+
+    // 计算 diff 统计
+    let old_lines = original_content.lines().count();
+    let new_lines = new_content.lines().count();
+    let line_diff = new_lines as i32 - old_lines as i32;
+    let lines_text = t_to("tui.status.lines", &locale);
+    let diff_info = if line_diff > 0 {
+        format!("+{}{}", line_diff, lines_text)
+    } else if line_diff < 0 {
+        format!("{}{}", line_diff, lines_text)
+    } else {
+        t_to("tui.status.no_changes", &locale)
+    };
+
+    // 覆盖层大小
+    let overlay_height = 10u16;
+    let overlay_width = 60u16;
+    if area.height < overlay_height + 2 || area.width < overlay_width + 2 {
+        return;
+    }
+    let overlay_area = Rect {
+        x: area.x + (area.width - overlay_width) / 2,
+        y: area.y + (area.height - overlay_height) / 2,
+        width: overlay_width,
+        height: overlay_height,
+    };
+
+    frame.render_widget(Clear, overlay_area);
+
+    // 构建消息
+    let file_name = app.file_path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let save_confirm = t_to("tui.status.save_confirm", &locale);
+    let change = t_to("tui.status.change", &locale);
+    let old_label = t_to("tui.status.old_lines", &locale);
+    let new_label = t_to("tui.status.new_lines", &locale);
+
+    let msg = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(format!("  {save_confirm}"), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(&file_name, Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(format!("  {change}"), Style::default().fg(Color::DarkGray)),
+            Span::styled(&diff_info, Style::default().fg(
+                if line_diff > 0 { Color::Green }
+                else if line_diff < 0 { Color::Red }
+                else { Color::DarkGray }
+            )),
+        ]),
+        Line::from(vec![
+            Span::styled(format!("  {old_label}"), Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{}{}", old_lines, lines_text), Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("  {new_label}"), Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{}{}", new_lines, lines_text), Style::default().fg(Color::DarkGray)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  [ Enter / Y ] Save  [ Esc / N ] Cancel",
+            Style::default().fg(Color::Yellow),
+        )),
+    ];
+
+    let title = t_to("tui.status.save_preview", &locale);
+    let para = Paragraph::new(msg).block(
+        Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
     );
 
     frame.render_widget(para, overlay_area);

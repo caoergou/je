@@ -26,6 +26,10 @@ pub enum AppMode {
         buffer: String,
         /// 光标在缓冲区中的字节位置。
         cursor_pos: usize,
+        /// 实时检测的类型（用于反馈）。
+        detected_type: Option<String>,
+        /// 是否有解析错误。
+        parse_error: Option<String>,
     },
     /// 正在编辑某个键名。
     EditKey {
@@ -40,6 +44,11 @@ pub enum AppMode {
     },
     /// 等待确认剥离注释。
     ConfirmStripComments,
+    /// 保存前预览 diff
+    ConfirmSave {
+        /// 原始内容（保存前的状态）
+        original_content: String,
+    },
     /// 搜索模式。
     Search {
         /// 搜索查询字符串。
@@ -344,13 +353,55 @@ impl App {
             Err(_) => return,
         };
 
+        // 检测初始值的类型
+        let (detected_type, parse_error) = Self::detect_value_type(&current_val);
+
         let len = current_val.len();
         self.mode = AppMode::Edit {
             path: line.path.clone(),
             value_type,
             buffer: current_val,
             cursor_pos: len,
+            detected_type,
+            parse_error,
         };
+    }
+
+    /// 实时检测输入值的类型
+    fn detect_value_type(input: &str) -> (Option<String>, Option<String>) {
+        let trimmed = input.trim();
+        if trimmed.is_empty() {
+            return (Some("empty".to_string()), None);
+        }
+
+        // 尝试解析为 JSON
+        match serde_json::from_str::<serde_json::Value>(trimmed) {
+            Ok(v) => {
+                let type_name = match v {
+                    serde_json::Value::String(_) => "string",
+                    serde_json::Value::Number(_) => "number",
+                    serde_json::Value::Bool(_) => "boolean",
+                    serde_json::Value::Null => "null",
+                    serde_json::Value::Array(_) => "array",
+                    serde_json::Value::Object(_) => "object",
+                };
+                (Some(type_name.to_string()), None)
+            }
+            Err(e) => {
+                // 解析失败，作为字符串处理
+                (Some("string (未加引号)".to_string()), Some(e.to_string()))
+            }
+        }
+    }
+
+    /// 更新编辑缓冲区的实时校验状态
+    pub fn update_edit_validation(&mut self) {
+        let AppMode::Edit { buffer, detected_type, parse_error, .. } = &mut self.mode else {
+            return;
+        };
+        let (new_type, new_error) = Self::detect_value_type(buffer);
+        *detected_type = new_type;
+        *parse_error = new_error;
     }
 
     /// 确认编辑，将缓冲区解析为 JSON 值并写入文档。
@@ -739,13 +790,36 @@ impl App {
 
     // ── 保存 ──────────────────────────────────────────────────────────────────
 
-    /// 尝试保存。若文件含注释则先进入确认模式。
+    /// 尝试保存。先显示 diff 预览。
     pub fn try_save(&mut self) {
-        if self.has_comments {
-            self.mode = AppMode::ConfirmStripComments;
+        // 读取当前文件内容用于 diff
+        let original_content = std::fs::read_to_string(&self.file_path)
+            .unwrap_or_default();
+        let new_content = format_pretty(&self.doc, &FormatOptions::default());
+
+        // 如果内容相同，直接提示无需保存
+        if original_content == new_content {
+            self.set_status(&t_to("tui.status.no_changes", &get_locale()), StatusLevel::Info);
             return;
         }
+
+        // 进入 diff 预览模式
+        self.mode = AppMode::ConfirmSave {
+            original_content,
+        };
+    }
+
+    /// 确认保存（从 diff 预览）。
+    pub fn confirm_save(&mut self) {
+        self.has_comments = false;
         self.do_save();
+        self.mode = AppMode::Normal;
+    }
+
+    /// 取消保存。
+    pub fn cancel_save(&mut self) {
+        self.mode = AppMode::Normal;
+        self.set_status(&t_to("tui.status.cancel_save", &get_locale()), StatusLevel::Info);
     }
 
     /// 确认剥离注释后保存。
@@ -767,6 +841,11 @@ impl App {
                 StatusLevel::Error,
             ),
         }
+    }
+
+    /// 获取新内容（用于 diff 预览）。
+    pub fn get_new_content(&self) -> String {
+        format_pretty(&self.doc, &FormatOptions::default())
     }
 
     // ── 搜索 ──────────────────────────────────────────────────────────────────
