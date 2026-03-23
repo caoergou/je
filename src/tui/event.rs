@@ -28,6 +28,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         AppMode::Edit { .. } => handle_edit(app, key),
         AppMode::EditKey { .. } => handle_edit_key(app, key),
         AppMode::ConfirmStripComments => handle_confirm(app, key),
+        AppMode::ConfirmSave { .. } => handle_confirm_save(app, key),
         AppMode::Search { .. } => handle_search(app, key),
         AppMode::AddNode { .. } => handle_add_node(app, key),
         AppMode::ContextMenu { .. } => handle_context_menu(app, key),
@@ -92,13 +93,23 @@ fn handle_normal(app: &mut App, key: KeyEvent) {
             );
         }
 
-        // 退出：只有 Ctrl+Q 可退出（未修改时直接退出，已修改时提示）
+        // 退出：Ctrl+Q 两次强制退出（未修改时直接退出）
         (KeyCode::Char('q'), KeyModifiers::CONTROL) => {
             if app.modified {
-                app.set_status(
-                    " 文件已修改！Ctrl+S 保存，Ctrl+Q 强制退出 ",
-                    StatusLevel::Warn,
-                );
+                // 检查是否是第二次按（上次状态是修改警告）
+                let is_warn = app.status.as_ref().is_some_and(|(_, level)| {
+                    *level == StatusLevel::Warn
+                });
+                if is_warn {
+                    // 强制退出，不保存
+                    app.should_quit = true;
+                } else {
+                    // 第一次提示
+                    app.set_status(
+                        " 文件已修改！Ctrl+S 保存，再按 Ctrl+Q 强制退出 ",
+                        StatusLevel::Warn,
+                    );
+                }
             } else {
                 app.should_quit = true;
             }
@@ -112,7 +123,7 @@ fn handle_normal(app: &mut App, key: KeyEvent) {
 
 fn handle_edit(app: &mut App, key: KeyEvent) {
     let AppMode::Edit {
-        buffer, cursor_pos, ..
+        buffer, cursor_pos, value_type, ..
     } = &mut app.mode
     else {
         return;
@@ -125,21 +136,39 @@ fn handle_edit(app: &mut App, key: KeyEvent) {
         KeyCode::Esc => {
             app.cancel_edit();
         }
+        // Tab 切换布尔值
+        KeyCode::Tab => {
+            if *value_type == "boolean" {
+                let current = buffer.trim();
+                if current == "true" {
+                    *buffer = "false".to_string();
+                } else if current == "false" {
+                    *buffer = "true".to_string();
+                } else {
+                    *buffer = "true".to_string();
+                }
+                *cursor_pos = buffer.len();
+                app.update_edit_validation();
+            }
+        }
         KeyCode::Char(c) => {
             buffer.insert(*cursor_pos, c);
             *cursor_pos += c.len_utf8();
+            app.update_edit_validation();
         }
         KeyCode::Backspace => {
             if *cursor_pos > 0 {
                 let prev = prev_char_boundary(buffer, *cursor_pos);
                 buffer.drain(prev..*cursor_pos);
                 *cursor_pos = prev;
+                app.update_edit_validation();
             }
         }
         KeyCode::Delete => {
             if *cursor_pos < buffer.len() {
                 let next = next_char_boundary(buffer, *cursor_pos);
                 buffer.drain(*cursor_pos..next);
+                app.update_edit_validation();
             }
         }
         KeyCode::Left => {
@@ -222,8 +251,21 @@ fn handle_confirm(app: &mut App, key: KeyEvent) {
             app.confirm_save_strip_comments();
         }
         KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-            app.mode = AppMode::Normal;
-            app.set_status("已取消保存", StatusLevel::Info);
+            app.cancel_save();
+        }
+        _ => {}
+    }
+}
+
+// ── 保存预览模式 ──────────────────────────────────────────────────────────────
+
+fn handle_confirm_save(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+            app.confirm_save();
+        }
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+            app.cancel_save();
         }
         _ => {}
     }

@@ -262,6 +262,14 @@ pub fn t_to(key: &str, locale: &str) -> String {
         "tui.status.cancel_save" => tr(locale, "已取消保存", "Save cancelled"),
         "tui.status.need_field_name" => tr(locale, "需要输入字段名", "Need to enter field name"),
         "tui.status.added_null" => tr(locale, "已添加空元素", "Added null element"),
+        "tui.status.no_changes" => tr(locale, "文件无变化，无需保存", "No changes to save"),
+        "tui.status.save_preview" => tr(locale, " 保存预览 ", " Save Preview "),
+        "tui.status.save_confirm" => tr(locale, "保存确认: ", "Save confirm: "),
+        "tui.status.change" => tr(locale, "变更: ", "Change: "),
+        "tui.status.old_lines" => tr(locale, "旧: ", "Old: "),
+        "tui.status.new_lines" => tr(locale, "→  新: ", "→  New: "),
+        "tui.status.lines" => tr(locale, " 行", " lines"),
+        "tui.status.string_as_str" => tr(locale, "string (将作为字符串保存)", "string (will be saved as string)"),
 
         // TUI overlays
         "tui.overlay.edit" => tr(locale, " 编辑 {0} - {1} ", " Edit {0} - {1} "),
