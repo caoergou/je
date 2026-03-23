@@ -19,7 +19,11 @@ impl Ctx {
         if self.json {
             println!("{}", build_ok(self.cmd, je_to_serde(v), actions));
         } else {
-            println!("{}", format_compact(v));
+            // 字符串裸输出（不含引号），方便 shell 直接使用
+            match v {
+                JsonValue::String(s) => println!("{s}"),
+                other => println!("{}", format_compact(other)),
+            }
         }
     }
 
