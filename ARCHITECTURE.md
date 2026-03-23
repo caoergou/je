@@ -187,7 +187,7 @@ pub struct Ctx {
 
 ### i18n（`i18n.rs`）
 
-通过 `JE_LANG` 环境变量（或 `--lang` 选项）控制输出语言。支持 `en`、`zh-CN`、`zh-TW`。
+通过 `JED_LANG` 环境变量（或 `--lang` 选项）控制输出语言。支持 `en`、`zh-CN`、`zh-TW`。
 翻译字符串以静态映射存储，零运行时依赖。
 
 ### stdin 支持（`main.rs`）
