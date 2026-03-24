@@ -32,14 +32,39 @@ jed get .name config.json
 
 ## Installation
 
-### Pre-built binaries (recommended)
+### Package managers (recommended)
 
-Download from the [Releases](https://github.com/caoergou/jed/releases) page, or use the install script:
+```bash
+# macOS / Linux (Homebrew)
+brew install caoergou/jed/jed
+
+# Debian / Ubuntu
+sudo dpkg -i jed_*.deb
+
+# Fedora / RHEL / CentOS
+sudo rpm -i jed-*.rpm
+```
+
+### Install script
 
 ```bash
 # Linux / macOS — auto-detects platform and installs to /usr/local/bin
 curl -fsSL https://github.com/caoergou/jed/releases/latest/download/install.sh | sh
 ```
+
+### Pre-built binaries
+
+Download from the [Releases](https://github.com/caoergou/jed/releases) page:
+
+| Platform | Binary |
+|----------|--------|
+| Linux x86_64 | `jed-linux-x86_64` |
+| Linux aarch64 | `jed-linux-aarch64` |
+| macOS x86_64 | `jed-macos-x86_64` |
+| macOS Apple Silicon | `jed-macos-aarch64` |
+| Windows x86_64 | `jed-windows-x86_64.exe` |
+
+Place the binary somewhere on your `$PATH` and rename it to `jed`.
 
 ### From crates.io
 
@@ -52,16 +77,6 @@ cargo install jed-json
 ```bash
 cargo install --git https://github.com/caoergou/jed
 ```
-
-| Platform | Binary |
-|----------|--------|
-| Linux x86_64 | `jed-linux-x86_64` |
-| Linux aarch64 | `jed-linux-aarch64` |
-| macOS x86_64 | `jed-macos-x86_64` |
-| macOS Apple Silicon | `jed-macos-aarch64` |
-| Windows x86_64 | `jed-windows-x86_64.exe` |
-
-Place the binary somewhere on your `$PATH` and rename it to `jed`.
 
 ---
 
@@ -308,7 +323,7 @@ Fish, PowerShell, and Elvish are also supported. See [CLI_SPEC.md](CLI_SPEC.md#c
 - [x] `diff --json` structured output mode
 - [x] TOML conversion (`jed convert toml`)
 - [x] Full JSON Schema validation (`type`, `required`, `properties`, `minimum`, `maximum`, `minLength`, `maxLength`, `minItems`, `maxItems`, `items`, `enum`)
-- [ ] Package manager distribution: Homebrew, apt/deb, rpm
+- [x] Package manager distribution: Homebrew, apt/deb, rpm
 
 ### v2.x — Power Features
 - [ ] Interactive shell mode (`jed shell`) — persistent REPL for batch edits without reopening files
