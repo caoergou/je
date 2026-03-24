@@ -748,9 +748,8 @@ fn render_help_panel(frame: &mut Frame, area: Rect) {
     };
 
     // 辅助函数：创建普通快捷键行
-    let key_row = |k: &str, desc: &str| -> Line<'static> {
-        help_row(key_span(k), desc.to_string())
-    };
+    let key_row =
+        |k: &str, desc: &str| -> Line<'static> { help_row(key_span(k), desc.to_string()) };
 
     // 辅助函数：创建组合键行
     let combo_row = |c: &str, k: &str, desc: &str| -> Line<'static> {
