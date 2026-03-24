@@ -382,6 +382,10 @@ pub fn t_to(key: &str, locale: &str) -> String {
         "tui.overlay.edit" => tr(locale, " 编辑 {0} - {1} ", " Edit {0} - {1} "),
         "tui.overlay.rename_key" => tr(locale, " 重命名键 {0} ", " Rename Key {0} "),
         "tui.overlay.add_field" => tr(locale, " 添加字段到 {0} ", " Add Field to {0} "),
+        "tui.overlay.select_type" => tr(locale, " 选择值类型 ", " Select Value Type "),
+        "tui.overlay.type_null" => tr(locale, "null (默认)", "null (default)"),
+        "tui.overlay.type_object" => tr(locale, "空对象", "Empty Object"),
+        "tui.overlay.type_array" => tr(locale, "空数组", "Empty Array"),
         "tui.overlay.search" => tr(locale, " 搜索 ", " Search "),
         "tui.overlay.confirm_quit" => tr(locale, " 退出确认 ", " Confirm Quit "),
         "tui.overlay.file_modified" => tr(

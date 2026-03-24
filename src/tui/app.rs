@@ -71,6 +71,10 @@ pub enum AppMode {
         key_buffer: String,
         /// 光标在 key 缓冲区的位置。
         key_cursor: usize,
+        /// 当前阶段：false = 输入 key，true = 选择类型
+        selecting_type: bool,
+        /// 选中的类型索引：0=null, 1=object, 2=array
+        type_selected: usize,
     },
     /// 右键菜单模式。
     ContextMenu {
@@ -918,18 +922,27 @@ impl App {
             return;
         };
 
+        // 获取当前选中节点的值类型
+        let value_type = line.value_type;
+        let current_path = &line.path;
+
+        // 判断当前选中的是否是对象或数组（即使是空的）
+        let is_object = value_type == "object";
+        let is_array = value_type == "array";
+
         // 确定父节点路径
-        let parent_path = if line.has_children && line.is_expanded {
-            line.path.clone()
+        // 如果选中的是容器类型（对象/数组），则在内部添加；否则在父节点添加
+        let parent_path = if (is_object || is_array) && line.is_expanded {
+            current_path.clone()
         } else {
-            parent_path(&line.path)
+            parent_path(current_path)
         };
 
-        // 判断父节点类型
-        let is_array = matches!(get(&self.doc, &parent_path), Ok(JsonValue::Array(_)));
+        // 重新判断父节点类型
+        let parent_is_array = matches!(get(&self.doc, &parent_path), Ok(JsonValue::Array(_)));
 
         // 数组模式：直接添加 null 元素，不需要弹窗
-        if is_array {
+        if parent_is_array {
             self.snapshot();
             // 用 add 追加到数组末尾
             if let Err(e) = engine_add(&mut self.doc, &parent_path, JsonValue::Null) {
@@ -951,9 +964,11 @@ impl App {
         // 对象模式：弹出输入框，只输入 key
         self.mode = AppMode::AddNode {
             parent_path,
-            is_array,
+            is_array: parent_is_array,
             key_buffer: String::new(),
             key_cursor: 0,
+            selecting_type: false,
+            type_selected: 0,
         };
     }
 
@@ -964,21 +979,40 @@ impl App {
             is_array: _,
             key_buffer,
             key_cursor: _,
+            selecting_type,
+            type_selected,
         } = &self.mode.clone()
         else {
             return;
         };
 
-        // 对象模式：key 不能为空
-        if key_buffer.is_empty() {
-            self.set_status(
-                &t_to("tui.status.need_field_name", &get_locale()),
-                StatusLevel::Error,
-            );
+        // 阶段1：还在输入 key
+        if !*selecting_type {
+            // 对象模式：key 不能为空
+            if key_buffer.is_empty() {
+                self.set_status(
+                    &t_to("tui.status.need_field_name", &get_locale()),
+                    StatusLevel::Error,
+                );
+                return;
+            }
+            // 进入类型选择阶段
+            if let AppMode::AddNode { selecting_type, .. } = &mut self.mode {
+                *selecting_type = true;
+            }
             return;
         }
 
+        // 阶段2：类型选择阶段，确认添加
         self.snapshot();
+
+        // 根据选中的类型创建值
+        #[allow(clippy::default_trait_access)]
+        let new_value = match type_selected {
+            1 => JsonValue::Object(Default::default()), // {}
+            2 => JsonValue::Array(Default::default()), // []
+            _ => JsonValue::Null,                      // null (默认)
+        };
 
         // 构建目标路径
         let target_path = if parent_path == "." {
@@ -987,8 +1021,7 @@ impl App {
             format!("{parent_path}.{key_buffer}")
         };
 
-        // 添加值默认为 null
-        if let Err(e) = engine_set(&mut self.doc, &target_path, JsonValue::Null) {
+        if let Err(e) = engine_set(&mut self.doc, &target_path, new_value) {
             self.set_status(
                 &t_to("err.add_failed", &get_locale()).replace("{0}", &e.to_string()),
                 StatusLevel::Error,
@@ -998,6 +1031,11 @@ impl App {
 
         self.modified = true;
         self.mode = AppMode::Normal;
+
+        // 如果是对象或数组，展开它
+        if *type_selected != 0 {
+            self.expanded.insert(target_path.clone());
+        }
 
         // 展开父节点
         self.expanded.insert(parent_path.clone());

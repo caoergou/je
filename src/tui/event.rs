@@ -392,11 +392,39 @@ fn handle_add_node(app: &mut App, key: KeyEvent) {
         is_array: _,
         key_buffer,
         key_cursor,
+        selecting_type,
+        type_selected,
     } = &mut app.mode
     else {
         return;
     };
 
+    // 阶段2：类型选择模式
+    if *selecting_type {
+        match key.code {
+            KeyCode::Enter => {
+                app.confirm_add_node();
+            }
+            KeyCode::Esc => {
+                // 返回输入 key 阶段
+                *selecting_type = false;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if *type_selected > 0 {
+                    *type_selected -= 1;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if *type_selected < 2 {
+                    *type_selected += 1;
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    // 阶段1：输入 key 模式
     match key.code {
         KeyCode::Enter => {
             app.confirm_add_node();
