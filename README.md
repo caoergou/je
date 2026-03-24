@@ -1,5 +1,7 @@
 # Jzen — JSON Config Editor
 
+[中文版本](./README-zh.md)
+
 Edit JSON configs without the struggle — **interactive TUI for humans**, **agent-optimized CLI for AI**.
 
 - **Humans**: Visual tree navigation, inline editing, syntax highlighting, auto-repair
