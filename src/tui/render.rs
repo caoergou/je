@@ -256,10 +256,7 @@ fn render_helpbar(frame: &mut Frame, app: &App, area: Rect) {
             (key("Enter"), t_to("tui.hint.next_match", &locale)),
             (key("Esc"), t_to("tui.hint.exit", &locale)),
         ],
-        AppMode::Help => vec![(
-            key("F1") + " / " + &key("Esc"),
-            t_to("tui.hint.close", &locale),
-        )],
+        AppMode::Help => vec![(key("Esc"), t_to("tui.hint.close", &locale))],
         AppMode::ConfirmQuit { .. } => vec![
             (key("Y"), t_to("tui.hint.save_quit", &locale)),
             (key("N"), t_to("tui.hint.no_save_quit", &locale)),
@@ -732,6 +729,29 @@ fn render_help_panel(frame: &mut Frame, area: Rect) {
         "Ctrl"
     };
 
+    // 辅助宏：创建表格化的帮助行
+    macro_rules! help_row {
+        ($key_str:expr, $desc:expr, $is_combo:expr) => {{
+            let key_span = if $is_combo {
+                combo(ctrl, $key_str)
+            } else {
+                key($key_str)
+            };
+            let key_len = if $is_combo {
+                $key_str.len() + ctrl.len() + 4 // [Ctrl]+[X]
+            } else {
+                $key_str.len() + 2 // [X]
+            };
+            let padding = 12usize.saturating_sub(key_len);
+            Line::from(vec![
+                Span::raw("  "),
+                key_span,
+                Span::raw(" ".repeat(padding)),
+                Span::styled($desc, Style::default().fg(Color::White)),
+            ])
+        }};
+    }
+
     let help_content: Vec<Line> = vec![
         Line::from(""),
         Line::from(Span::styled(
@@ -749,48 +769,15 @@ fn render_help_panel(frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )),
         // up/down
-        Line::from(vec![
-            Span::raw("  "),
-            key("↑"),
-            Span::raw("/"),
-            key("↓"),
-            Span::raw("  "),
-            Span::styled(move_up_down, Style::default().fg(Color::White)),
-        ]),
+        help_row!("↑/↓", &move_up_down, false),
         // left/right
-        Line::from(vec![
-            Span::raw("  "),
-            key("←"),
-            Span::raw("/"),
-            key("→"),
-            Span::raw("  "),
-            Span::styled(collapse_expand, Style::default().fg(Color::White)),
-        ]),
+        help_row!("←/→", &collapse_expand, false),
         // space
-        Line::from(vec![
-            Span::raw("  "),
-            key("Space"),
-            Span::raw("  "),
-            Span::styled(toggle_expand, Style::default().fg(Color::White)),
-        ]),
+        help_row!("Space", &toggle_expand, false),
         // PgUp/PgDn
-        Line::from(vec![
-            Span::raw("  "),
-            key("PgUp"),
-            Span::raw("/"),
-            key("PgDn"),
-            Span::raw("  "),
-            Span::styled(quick_scroll, Style::default().fg(Color::White)),
-        ]),
+        help_row!("PgUp/PgDn", &quick_scroll, false),
         // Home/End
-        Line::from(vec![
-            Span::raw("  "),
-            key("Home"),
-            Span::raw("/"),
-            key("End"),
-            Span::raw(" "),
-            Span::styled(jump_begin_end, Style::default().fg(Color::White)),
-        ]),
+        help_row!("Home/End", &jump_begin_end, false),
         Line::from(""),
         Line::from(Span::styled(
             format!("  {edit}"),
@@ -799,33 +786,13 @@ fn render_help_panel(frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )),
         // Enter
-        Line::from(vec![
-            Span::raw("  "),
-            key("Enter"),
-            Span::raw("  "),
-            Span::styled(edit_value, Style::default().fg(Color::White)),
-        ]),
+        help_row!("Enter", &edit_value, false),
         // N
-        Line::from(vec![
-            Span::raw("  "),
-            key("N"),
-            Span::raw("      "),
-            Span::styled(new_node, Style::default().fg(Color::White)),
-        ]),
+        help_row!("N", &new_node, false),
         // Delete
-        Line::from(vec![
-            Span::raw("  "),
-            key("Del"),
-            Span::raw("  "),
-            Span::styled(delete_node, Style::default().fg(Color::White)),
-        ]),
+        help_row!("Del", &delete_node, false),
         // Tab
-        Line::from(vec![
-            Span::raw("  "),
-            key("Tab"),
-            Span::raw("  "),
-            Span::styled(toggle_bool, Style::default().fg(Color::White)),
-        ]),
+        help_row!("Tab", &toggle_bool, false),
         Line::from(""),
         Line::from(Span::styled(
             format!("  {file}"),
@@ -834,40 +801,15 @@ fn render_help_panel(frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )),
         // /
-        Line::from(vec![
-            Span::raw("  "),
-            key("/"),
-            Span::raw("      "),
-            Span::styled(search, Style::default().fg(Color::White)),
-        ]),
+        help_row!("/", &search, false),
         // Ctrl+S
-        Line::from(vec![
-            Span::raw("  "),
-            combo(ctrl, "S"),
-            Span::raw("    "),
-            Span::styled(save, Style::default().fg(Color::White)),
-        ]),
+        help_row!("S", &save, true),
         // Ctrl+Z
-        Line::from(vec![
-            Span::raw("  "),
-            combo(ctrl, "Z"),
-            Span::raw("    "),
-            Span::styled(undo, Style::default().fg(Color::White)),
-        ]),
+        help_row!("Z", &undo, true),
         // Ctrl+Y
-        Line::from(vec![
-            Span::raw("  "),
-            combo(ctrl, "Y"),
-            Span::raw("    "),
-            Span::styled(redo, Style::default().fg(Color::White)),
-        ]),
+        help_row!("Y", &redo, true),
         // Ctrl+Q
-        Line::from(vec![
-            Span::raw("  "),
-            combo(ctrl, "Q"),
-            Span::raw("    "),
-            Span::styled(quit, Style::default().fg(Color::White)),
-        ]),
+        help_row!("Q", &quit, true),
         Line::from(""),
         Line::from(Span::styled(
             close_help,
