@@ -20,13 +20,21 @@ pub fn get_locale() -> String {
     }
 
     // 2. System language detection
-    let candidates = ["LC_ALL", "LC_MESSAGES", "LANG"];
+    // LANGUAGE is a special GNU gettext variable (priority over LC_* variables)
+    // It typically contains a colon-separated list like "zh_CN:en_US:en"
+    let candidates = ["LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"];
     for var in candidates {
         if let Ok(v) = env::var(var)
             && !v.is_empty()
             && !v.starts_with("C.")
         {
-            return normalize_locale(&v);
+            // For LANGUAGE variable, extract the first language code (before any colon)
+            let locale_str = if var == "LANGUAGE" {
+                v.split(':').next().unwrap_or(&v)
+            } else {
+                v.as_str()
+            };
+            return normalize_locale(locale_str);
         }
     }
 
@@ -54,6 +62,7 @@ pub fn supported_locales() -> Vec<&'static str> {
 
 /// Platform-specific modifier key display.
 /// Returns "Ctrl" on Windows/Linux, "⌘" on macOS.
+#[allow(dead_code)]
 pub fn modifier_key() -> &'static str {
     if OS == "macos" { "⌘" } else { "Ctrl" }
 }
@@ -83,6 +92,7 @@ pub fn is_macos() -> bool {
 /// - PageUp/PageDown → PgUp/PgDn
 /// - Home/End → Home/End
 /// - Modifier keys: Ctrl → Ctrl/⌘, Shift → ⇧, Alt → ⌥ (platform-aware)
+#[allow(dead_code)]
 pub fn format_key(key: &str) -> String {
     match key.to_lowercase().as_str() {
         "enter" => "↵".to_string(),
@@ -116,6 +126,7 @@ pub fn format_key(key: &str) -> String {
 }
 
 /// Format a shortcut combination like "Ctrl+S" into "⌘+S" (macOS) or "Ctrl+S" (Linux/Windows)
+#[allow(dead_code)]
 pub fn format_shortcut(keys: &str) -> String {
     // Split by '+' and format each part
     let parts: Vec<&str> = keys.split('+').collect();
@@ -383,8 +394,8 @@ pub fn t_to(key: &str, locale: &str) -> String {
         "tui.status.string_unquoted" => tr(locale, "string (未加引号)", "string (unquoted)"),
         "tui.overlay.save_hint" => tr(
             locale,
-            " [ Enter / Y ] 保存  [ Esc / N ] 取消",
-            " [ Enter / Y ] Save  [ Esc / N ] Cancel",
+            "[Enter] / [Y] 保存   [Esc] / [N] 取消",
+            "[Enter] / [Y] Save   [Esc] / [N] Cancel",
         ),
         "tui.confirm.has_comments" => tr(
             locale,

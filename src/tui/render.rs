@@ -12,7 +12,7 @@ use ratatui::{
 
 use super::app::{App, AppMode, ContextAction, StatusLevel};
 use super::tree::TreeLine;
-use crate::i18n::{format_key, format_shortcut, get_locale, t_to};
+use crate::i18n::{get_locale, t_to};
 
 /// 每帧的主渲染入口。
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -207,59 +207,78 @@ fn render_statusbar(frame: &mut Frame, app: &App, area: Rect, _lines: &[TreeLine
 fn render_helpbar(frame: &mut Frame, app: &App, area: Rect) {
     let locale = get_locale();
 
+    // 辅助函数：创建带颜色的单个快捷键
+    let key = |k: &str| -> String { format!("[{k}]") };
+
+    // 辅助函数：创建组合键 [Ctrl]+[S] 格式
+    let combo = |c: &str, k: &str| -> String {
+        let uk = k.to_uppercase();
+        format!("[{c}]+[{uk}]")
+    };
+
+    // 获取修饰键文本
+    let ctrl = if cfg!(target_os = "macos") {
+        "⌘"
+    } else {
+        "Ctrl"
+    };
+
     // 使用格式化后的键位
     let hints: Vec<(String, String)> = match &app.mode {
         AppMode::Normal => vec![
-            (
-                format_key("up") + &format_key("down"),
-                t_to("tui.hint.move", &locale),
-            ),
-            (format_key("enter"), t_to("tui.hint.edit", &locale)),
-            (format_key("space"), t_to("tui.hint.expand", &locale)),
-            ("N".to_string(), t_to("tui.hint.new", &locale)),
-            ("/".to_string(), t_to("tui.hint.search_key", &locale)),
-            (format_shortcut("Ctrl+S"), t_to("tui.hint.save", &locale)),
-            ("F1".to_string(), t_to("tui.hint.help", &locale)),
+            (key("↑") + " / " + &key("↓"), t_to("tui.hint.move", &locale)),
+            (key("Enter"), t_to("tui.hint.edit", &locale)),
+            (key("Space"), t_to("tui.hint.expand", &locale)),
+            (key("N"), t_to("tui.hint.new", &locale)),
+            (key("/"), t_to("tui.hint.search_key", &locale)),
+            (combo(ctrl, "S"), t_to("tui.hint.save", &locale)),
+            (key("F1"), t_to("tui.hint.help", &locale)),
         ],
         AppMode::Edit { value_type, .. } => {
             if *value_type == "boolean" {
                 vec![
-                    (format_key("tab"), t_to("tui.hint.toggle", &locale)),
-                    (format_key("enter"), t_to("tui.hint.confirm", &locale)),
-                    (format_key("esc"), t_to("tui.hint.cancel", &locale)),
+                    (key("Tab"), t_to("tui.hint.toggle", &locale)),
+                    (key("Enter"), t_to("tui.hint.confirm", &locale)),
+                    (key("Esc"), t_to("tui.hint.cancel", &locale)),
                 ]
             } else {
                 vec![
-                    (format_key("enter"), t_to("tui.hint.confirm", &locale)),
-                    (format_key("esc"), t_to("tui.hint.cancel", &locale)),
+                    (key("Enter"), t_to("tui.hint.confirm", &locale)),
+                    (key("Esc"), t_to("tui.hint.cancel", &locale)),
                 ]
             }
         }
         AppMode::EditKey { .. } | AppMode::AddNode { .. } => vec![
-            (format_key("enter"), t_to("tui.hint.confirm", &locale)),
-            (format_key("esc"), t_to("tui.hint.cancel", &locale)),
+            (key("Enter"), t_to("tui.hint.confirm", &locale)),
+            (key("Esc"), t_to("tui.hint.cancel", &locale)),
         ],
         AppMode::Search { .. } => vec![
-            (format_key("enter"), t_to("tui.hint.next_match", &locale)),
-            (format_key("esc"), t_to("tui.hint.exit", &locale)),
+            (key("Enter"), t_to("tui.hint.next_match", &locale)),
+            (key("Esc"), t_to("tui.hint.exit", &locale)),
         ],
-        AppMode::Help => vec![("F1/Esc".to_string(), t_to("tui.hint.close", &locale))],
+        AppMode::Help => vec![(
+            key("F1") + " / " + &key("Esc"),
+            t_to("tui.hint.close", &locale),
+        )],
         AppMode::ConfirmQuit { .. } => vec![
-            ("Y".to_string(), t_to("tui.hint.save_quit", &locale)),
-            ("N".to_string(), t_to("tui.hint.no_save_quit", &locale)),
-            ("C/Esc".to_string(), t_to("tui.hint.cancel", &locale)),
+            (key("Y"), t_to("tui.hint.save_quit", &locale)),
+            (key("N"), t_to("tui.hint.no_save_quit", &locale)),
+            (
+                key("C") + " / " + &key("Esc"),
+                t_to("tui.hint.cancel", &locale),
+            ),
         ],
         AppMode::ConfirmSave { .. } => vec![
-            (format_key("enter"), t_to("tui.hint.save", &locale)),
-            (format_key("esc"), t_to("tui.hint.cancel", &locale)),
+            (key("Enter"), t_to("tui.hint.save", &locale)),
+            (key("Esc"), t_to("tui.hint.cancel", &locale)),
         ],
         AppMode::ContextMenu { .. } => vec![
             (
-                format_key("up") + &format_key("down"),
+                key("↑") + " / " + &key("↓"),
                 t_to("tui.hint.select", &locale),
             ),
-            (format_key("enter"), t_to("tui.hint.execute", &locale)),
-            (format_key("esc"), t_to("tui.hint.exit", &locale)),
+            (key("Enter"), t_to("tui.hint.execute", &locale)),
+            (key("Esc"), t_to("tui.hint.exit", &locale)),
         ],
     };
 
@@ -625,17 +644,32 @@ fn render_help_panel(frame: &mut Frame, area: Rect) {
 
     frame.render_widget(Clear, overlay_area);
 
-    // 使用格式化的快捷键（平台感知：macOS 显示 ⌘，其他显示 Ctrl）
-    let save_key = format!("{}+S", format_key("Ctrl"));
-    let undo_key = format!("{}+Z", format_key("Ctrl"));
-    let redo_key = format!("{}+Y", format_key("Ctrl"));
-    let quit_key = format!("{}+Q", format_key("Ctrl"));
+    // 辅助函数：创建带颜色的快捷键 span
+    let key = |k: &str| -> Span<'static> {
+        Span::styled(
+            format!("[{k}]"),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
+    };
 
-    // 预创建带快捷键的字符串（保持固定宽度对齐）
-    let save_line = format!("    [{save_key:^8}]      {save}");
-    let undo_line = format!("    [{undo_key:^8}]      {undo}");
-    let redo_line = format!("    [{redo_key:^8}]      {redo}");
-    let quit_line = format!("    [{quit_key:^8}]      {quit}");
+    // 辅助函数：创建组合键（使用 [Ctrl]+[C] 格式）
+    let combo = |c: &str, k: &str| -> Span<'static> {
+        Span::styled(
+            format!("[{c}]+[{}]", k.to_uppercase()),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
+    };
+
+    // 获取修饰键文本
+    let ctrl = if cfg!(target_os = "macos") {
+        "⌘"
+    } else {
+        "Ctrl"
+    };
 
     let help_content: Vec<Line> = vec![
         Line::from(""),
@@ -653,46 +687,49 @@ fn render_help_panel(frame: &mut Frame, area: Rect) {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         )),
-        Line::from(Span::styled(
-            format!(
-                "    [{}] / [{}]    {}",
-                format_key("up"),
-                format_key("down"),
-                move_up_down
-            ),
-            Style::default().fg(Color::White),
-        )),
-        Line::from(Span::styled(
-            format!(
-                "    [{}] / [{}]    {}",
-                format_key("left"),
-                format_key("right"),
-                collapse_expand
-            ),
-            Style::default().fg(Color::White),
-        )),
-        Line::from(Span::styled(
-            format!("    [{:^12}] {}", format_key("space"), toggle_expand),
-            Style::default().fg(Color::White),
-        )),
-        Line::from(Span::styled(
-            format!(
-                "    [{:^6}] / [{:^6}]  {}",
-                format_key("PageUp"),
-                format_key("PageDown"),
-                quick_scroll
-            ),
-            Style::default().fg(Color::White),
-        )),
-        Line::from(Span::styled(
-            format!(
-                "    [{:^6}] / [{:^6}] {}",
-                format_key("Home"),
-                format_key("End"),
-                jump_begin_end
-            ),
-            Style::default().fg(Color::White),
-        )),
+        // up/down
+        Line::from(vec![
+            Span::raw("  "),
+            key("↑"),
+            Span::raw("/"),
+            key("↓"),
+            Span::raw("  "),
+            Span::styled(move_up_down, Style::default().fg(Color::White)),
+        ]),
+        // left/right
+        Line::from(vec![
+            Span::raw("  "),
+            key("←"),
+            Span::raw("/"),
+            key("→"),
+            Span::raw("  "),
+            Span::styled(collapse_expand, Style::default().fg(Color::White)),
+        ]),
+        // space
+        Line::from(vec![
+            Span::raw("  "),
+            key("Space"),
+            Span::raw("  "),
+            Span::styled(toggle_expand, Style::default().fg(Color::White)),
+        ]),
+        // PgUp/PgDn
+        Line::from(vec![
+            Span::raw("  "),
+            key("PgUp"),
+            Span::raw("/"),
+            key("PgDn"),
+            Span::raw("  "),
+            Span::styled(quick_scroll, Style::default().fg(Color::White)),
+        ]),
+        // Home/End
+        Line::from(vec![
+            Span::raw("  "),
+            key("Home"),
+            Span::raw("/"),
+            key("End"),
+            Span::raw(" "),
+            Span::styled(jump_begin_end, Style::default().fg(Color::White)),
+        ]),
         Line::from(""),
         Line::from(Span::styled(
             format!("  {edit}"),
@@ -700,22 +737,34 @@ fn render_help_panel(frame: &mut Frame, area: Rect) {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         )),
-        Line::from(Span::styled(
-            format!("    [{:^12}] {}", format_key("enter"), edit_value),
-            Style::default().fg(Color::White),
-        )),
-        Line::from(Span::styled(
-            format!("    [N]            {new_node}"),
-            Style::default().fg(Color::White),
-        )),
-        Line::from(Span::styled(
-            format!("    [{:^12}] {}", format_key("delete"), delete_node),
-            Style::default().fg(Color::White),
-        )),
-        Line::from(Span::styled(
-            format!("    [{:^12}] {}", format_key("tab"), toggle_bool),
-            Style::default().fg(Color::White),
-        )),
+        // Enter
+        Line::from(vec![
+            Span::raw("  "),
+            key("Enter"),
+            Span::raw("  "),
+            Span::styled(edit_value, Style::default().fg(Color::White)),
+        ]),
+        // N
+        Line::from(vec![
+            Span::raw("  "),
+            key("N"),
+            Span::raw("      "),
+            Span::styled(new_node, Style::default().fg(Color::White)),
+        ]),
+        // Delete
+        Line::from(vec![
+            Span::raw("  "),
+            key("Del"),
+            Span::raw("  "),
+            Span::styled(delete_node, Style::default().fg(Color::White)),
+        ]),
+        // Tab
+        Line::from(vec![
+            Span::raw("  "),
+            key("Tab"),
+            Span::raw("  "),
+            Span::styled(toggle_bool, Style::default().fg(Color::White)),
+        ]),
         Line::from(""),
         Line::from(Span::styled(
             format!("  {file}"),
@@ -723,14 +772,41 @@ fn render_help_panel(frame: &mut Frame, area: Rect) {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         )),
-        Line::from(Span::styled(
-            format!("    [/]            {search}"),
-            Style::default().fg(Color::White),
-        )),
-        Line::from(Span::styled(save_line, Style::default().fg(Color::White))),
-        Line::from(Span::styled(undo_line, Style::default().fg(Color::White))),
-        Line::from(Span::styled(redo_line, Style::default().fg(Color::White))),
-        Line::from(Span::styled(quit_line, Style::default().fg(Color::White))),
+        // /
+        Line::from(vec![
+            Span::raw("  "),
+            key("/"),
+            Span::raw("      "),
+            Span::styled(search, Style::default().fg(Color::White)),
+        ]),
+        // Ctrl+S
+        Line::from(vec![
+            Span::raw("  "),
+            combo(ctrl, "S"),
+            Span::raw("    "),
+            Span::styled(save, Style::default().fg(Color::White)),
+        ]),
+        // Ctrl+Z
+        Line::from(vec![
+            Span::raw("  "),
+            combo(ctrl, "Z"),
+            Span::raw("    "),
+            Span::styled(undo, Style::default().fg(Color::White)),
+        ]),
+        // Ctrl+Y
+        Line::from(vec![
+            Span::raw("  "),
+            combo(ctrl, "Y"),
+            Span::raw("    "),
+            Span::styled(redo, Style::default().fg(Color::White)),
+        ]),
+        // Ctrl+Q
+        Line::from(vec![
+            Span::raw("  "),
+            combo(ctrl, "Q"),
+            Span::raw("    "),
+            Span::styled(quit, Style::default().fg(Color::White)),
+        ]),
         Line::from(""),
         Line::from(Span::styled(
             close_help,
@@ -897,9 +973,20 @@ fn render_context_menu(frame: &mut Frame, app: &App, area: Rect) {
         height: menu_height,
     };
 
-    // 填充不透明背景
-    let bg = Paragraph::new(" ").style(Style::default().bg(Color::Black));
-    frame.render_widget(bg, overlay_area);
+    // 清除区域并填充不透明黑色背景
+    frame.render_widget(Clear, overlay_area);
+    let bg = Paragraph::new(" ".repeat(overlay_area.width as usize))
+        .style(Style::default().bg(Color::Black));
+    // 逐行渲染背景以确保完全覆盖
+    for y in 0..overlay_area.height {
+        let row_area = Rect {
+            x: overlay_area.x,
+            y: overlay_area.y + y,
+            width: overlay_area.width,
+            height: 1,
+        };
+        frame.render_widget(&bg, row_area);
+    }
 
     // 悬停效果优先于键盘选中
     let hover_row = app.menu_hover_row;

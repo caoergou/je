@@ -515,15 +515,15 @@ fn handle_mouse(app: &mut App, event: crossterm::event::MouseEvent) {
         if event.kind == crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
         {
             // 保存预览对话框位置在屏幕中央，宽度60，高度10
-            // 提示行内容: "  [ Enter / Y ] Save  [ Esc / N ] Cancel"
-            // 简化处理：[Y/Save] 在列 13-22, [N/Cancel] 在列 26-35
+            // 提示行内容: "[Enter] / [Y] Save   [Esc] / [N] Cancel"
+            // [Enter]/[Y]/Save 在列 1-17, [Esc]/[N]/Cancel 在列 21-37
             if event.row > 0 && event.row < 20 {
                 let col = event.column as i32;
-                if (13..22).contains(&col) {
-                    // [Y/Enter] 保存
+                if (1..18).contains(&col) {
+                    // [Enter]/[Y] 保存
                     app.confirm_save();
-                } else if (26..35).contains(&col) {
-                    // [N/Esc] 取消
+                } else if (21..38).contains(&col) {
+                    // [Esc]/[N] 取消
                     app.cancel_save();
                 }
             }
