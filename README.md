@@ -11,19 +11,30 @@ JSON editor with **TUI for humans** and **CLI for AI agents**.
 
 ## Why Jzen?
 
-### Problem: Editing JSON Configs
+### Problem 1: Claude Code MCP Config
 
-Traditional: load full file → find field → rewrite entire file
+Traditional: load entire file → find field → rewrite full file → high token cost
 
 With Jzen:
 ```bash
-jzen schema config.json                    # structure only (no values)
-jzen get .database.host config.json       # single value
-jzen set .database.port 5432 config.json  # atomic update
-jzen patch '[{"op":"add","path":".tags","value":["prod"]}]' config.json
+jzen schema ~/.claude/settings.json        # structure only
+jzen get .mcpServers.github.command ~      # single value
+jzen set .mcpServers.github.env.TOKEN '"xxx"' ~
+jzen patch '[{"op":"replace",path:".defaultMode",value:"Command"}]' ~
 ```
+**Token savings: 90%+**
 
-**vs jq**: jq is a query language, jzen is an editor. jq reads all → filters → outputs; jzen reads only what you query.
+### Problem 2: OpenClaw Agent Config
+
+Traditional: open full file → manual edit → risk format errors
+
+With Jzen:
+```bash
+jzen tree ~/.config/openclaw/agent.json
+jzen set .model.provider '"openai"' ~/.config/openclaw/agent.json
+jzen fix --strip-comments ~/.config/openclaw/agent.json
+```
+**Atomic writes, auto-repair**
 
 ---
 
