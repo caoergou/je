@@ -624,10 +624,20 @@ pub(crate) fn write_file_atomic(
     path: &Path,
     content: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    use std::fs::File;
+    use std::io::Write;
+
     let locale = get_locale();
     let tmp_path = path.with_extension("tmp");
-    fs::write(&tmp_path, content)
+
+    let mut file = File::create(&tmp_path)
         .map_err(|e| t_to("err.write_tmp_failed", &locale).replace("{0}", &e.to_string()))?;
+    file.write_all(content.as_bytes())
+        .map_err(|e| t_to("err.write_tmp_failed", &locale).replace("{0}", &e.to_string()))?;
+    file.sync_all()
+        .map_err(|e| t_to("err.write_tmp_failed", &locale).replace("{0}", &e.to_string()))?;
+    drop(file);
+
     fs::rename(&tmp_path, path)
         .map_err(|e| t_to("err.rename_failed_file", &locale).replace("{0}", &e.to_string()))?;
     Ok(())

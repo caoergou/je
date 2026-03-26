@@ -38,11 +38,11 @@ fn run_loop(mut app: App) -> Result<(), Box<dyn std::error::Error>> {
     let file_path = app.file_path.clone();
     let (watcher_tx, watch_rx) = channel::<notify::Result<notify::Event>>();
 
+    // 创建并启动文件监控器，保持存活直到事件循环结束
     let mut watcher = RecommendedWatcher::new(watcher_tx, Config::default())?;
     watcher.watch(&file_path, RecursiveMode::NonRecursive)?;
-    drop(watcher);
 
-    let result = event_loop(&mut terminal, &mut app, watch_rx);
+    let result = event_loop(&mut terminal, &mut app, watch_rx, &mut watcher);
 
     disable_raw_mode()?;
     execute!(
@@ -60,6 +60,7 @@ fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
     watch_rx: Receiver<notify::Result<notify::Event>>,
+    _watcher: &mut RecommendedWatcher,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let poll_interval = Duration::from_millis(WATCH_POLL_INTERVAL_MS);
 

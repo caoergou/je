@@ -115,10 +115,29 @@ jobs:
         with:
           path: artifacts
 
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f \( -name "jzen-*" -o -name "*.deb" -o -name "*.rpm" \) -exec mv {} release-assets/ \;
+          cp install.sh release-assets/
+
+      - name: Generate shell completions
+        run: |
+          chmod +x release-assets/jzen-linux-x86_64
+          mkdir -p completions
+          release-assets/jzen-linux-x86_64 completions bash > completions/jzen.bash
+          release-assets/jzen-linux-x86_64 completions zsh > completions/jzen.zsh
+          release-assets/jzen-linux-x86_64 completions fish > completions/jzen.fish
+          tar -czvf release-assets/completions.tar.gz -C completions .
+
+      - name: Generate checksums
+        working-directory: release-assets
+        run: sha256sum * > SHA256SUMS
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: release-assets/*
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
