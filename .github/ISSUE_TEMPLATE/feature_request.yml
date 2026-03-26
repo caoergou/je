@@ -1,0 +1,71 @@
+name: ✨ Feature Request
+description: Suggest a new feature or enhancement for Jzen
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please fill out the sections below.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Use Case
+      description: Describe the problem you're trying to solve or the use case
+      placeholder: |
+        I'm trying to [X] but Jzen doesn't support it currently.
+        Currently, I have to [workaround]...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe what you'd like to see implemented
+      placeholder: |
+        Add a new command `jzen merge` that combines two JSON files...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative solutions?
+      placeholder: "I could use `jq` for this, but it would be nice if Jzen supported it..."
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example Usage
+      description: Show how this feature would be used
+      placeholder: |
+        ```bash
+        jzen merge file1.json file2.json --output merged.json
+        ```
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feature Category
+      options:
+        - New CLI command
+        - TUI improvement
+        - Performance
+        - Format support (YAML, TOML, etc.)
+        - AI Agent features
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have read the [CONTRIBUTING.md](../CONTRIBUTING.md) guide
+          required: false

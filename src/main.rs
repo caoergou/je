@@ -42,7 +42,7 @@ fn main() {
         Some(Command::Completions { shell }) => {
             use clap_complete::generate;
             let mut cmd = Cli::command();
-            generate(*shell, &mut cmd, "jed", &mut std::io::stdout());
+            generate(*shell, &mut cmd, "jzen", &mut std::io::stdout());
         }
 
         // Tree 命令
@@ -198,141 +198,141 @@ fn all_commands() -> Vec<CmdMeta> {
     vec![
         CmdMeta {
             name: "get",
-            usage: "jed get <path> <file>",
+            usage: "jzen get <path> <file>",
             description: "Get value at path",
-            example: "jed get .database.host config.json",
+            example: "jzen get .database.host config.json",
         },
         CmdMeta {
             name: "keys",
-            usage: "jed keys [path] <file>",
+            usage: "jzen keys [path] <file>",
             description: "List all keys or array indices at path",
-            example: "jed keys .users config.json",
+            example: "jzen keys .users config.json",
         },
         CmdMeta {
             name: "len",
-            usage: "jed len [path] <file>",
+            usage: "jzen len [path] <file>",
             description: "Get array length or object key count",
-            example: "jed len .items data.json",
+            example: "jzen len .items data.json",
         },
         CmdMeta {
             name: "type",
-            usage: "jed type [path] <file>",
+            usage: "jzen type [path] <file>",
             description: "Get the type of a value",
-            example: "jed type .version config.json",
+            example: "jzen type .version config.json",
         },
         CmdMeta {
             name: "exists",
-            usage: "jed exists <path> <file>",
+            usage: "jzen exists <path> <file>",
             description: "Check if a path exists (exit 0=yes, 2=no)",
-            example: "jed exists .debug config.json",
+            example: "jzen exists .debug config.json",
         },
         CmdMeta {
             name: "schema",
-            usage: "jed schema <file>",
+            usage: "jzen schema <file>",
             description: "Infer and display the structure of the file",
-            example: "jed schema config.json",
+            example: "jzen schema config.json",
         },
         CmdMeta {
             name: "check",
-            usage: "jed check <file>",
+            usage: "jzen check <file>",
             description: "Validate JSON syntax",
-            example: "jed check config.json",
+            example: "jzen check config.json",
         },
         CmdMeta {
             name: "set",
-            usage: "jed set <path> <value> <file>",
+            usage: "jzen set <path> <value> <file>",
             description: "Set a value at path (creates if missing)",
-            example: "jed set .debug true config.json",
+            example: "jzen set .debug true config.json",
         },
         CmdMeta {
             name: "del",
-            usage: "jed del <path> <file>",
+            usage: "jzen del <path> <file>",
             description: "Delete a key or array element",
-            example: "jed del .deprecated config.json",
+            example: "jzen del .deprecated config.json",
         },
         CmdMeta {
             name: "add",
-            usage: "jed add [path] <value> <file>",
+            usage: "jzen add [path] <value> <file>",
             description: "Append to array or merge into object",
-            example: "jed add .tags '\"beta\"' config.json",
+            example: "jzen add .tags '\"beta\"' config.json",
         },
         CmdMeta {
             name: "patch",
-            usage: "jed patch <operations> <file>",
+            usage: "jzen patch <operations> <file>",
             description: "Batch operations via JSON Patch (RFC 6902)",
-            example: "jed patch '[{\"op\":\"replace\",\"path\":\".x\",\"value\":1}]' f.json",
+            example: "jzen patch '[{\"op\":\"replace\",\"path\":\".x\",\"value\":1}]' f.json",
         },
         CmdMeta {
             name: "mv",
-            usage: "jed mv <src> <dst> <file>",
+            usage: "jzen mv <src> <dst> <file>",
             description: "Move/rename a key",
-            example: "jed mv .oldName .newName config.json",
+            example: "jzen mv .oldName .newName config.json",
         },
         CmdMeta {
             name: "fmt",
-            usage: "jed fmt [--indent N] <file>",
+            usage: "jzen fmt [--indent N] <file>",
             description: "Pretty-format JSON in-place",
-            example: "jed fmt --indent 4 config.json",
+            example: "jzen fmt --indent 4 config.json",
         },
         CmdMeta {
             name: "fix",
-            usage: "jed fix [--dry-run] [--strip-comments] <file>",
+            usage: "jzen fix [--dry-run] [--strip-comments] <file>",
             description: "Auto-repair common JSON errors",
-            example: "jed fix --dry-run broken.json",
+            example: "jzen fix --dry-run broken.json",
         },
         CmdMeta {
             name: "minify",
-            usage: "jed minify <file>",
+            usage: "jzen minify <file>",
             description: "Minify JSON (remove all whitespace)",
-            example: "jed minify data.json",
+            example: "jzen minify data.json",
         },
         CmdMeta {
             name: "diff",
-            usage: "jed diff <other> <file>",
+            usage: "jzen diff <other> <file>",
             description: "Compare two JSON files (exit 0=same, 1=diff)",
-            example: "jed diff new.json old.json",
+            example: "jzen diff new.json old.json",
         },
         CmdMeta {
             name: "tree",
-            usage: "jed tree [-e] [-p <path>] <file>",
+            usage: "jzen tree [-e] [-p <path>] <file>",
             description: "Display JSON as a tree",
-            example: "jed tree -e config.json",
+            example: "jzen tree -e config.json",
         },
         CmdMeta {
             name: "query",
-            usage: "jed query <filter> <file>",
+            usage: "jzen query <filter> <file>",
             description: "Filter/query JSON using path expressions",
-            example: "jed query .users[0] data.json",
+            example: "jzen query .users[0] data.json",
         },
         CmdMeta {
             name: "validate",
-            usage: "jed validate <schema> <file>",
+            usage: "jzen validate <schema> <file>",
             description: "Validate against a JSON Schema file",
-            example: "jed validate schema.json data.json",
+            example: "jzen validate schema.json data.json",
         },
         CmdMeta {
             name: "convert",
-            usage: "jed convert <format> <file>",
+            usage: "jzen convert <format> <file>",
             description: "Convert JSON to another format (yaml)",
-            example: "jed convert yaml config.json",
+            example: "jzen convert yaml config.json",
         },
         CmdMeta {
             name: "commands",
-            usage: "jed commands",
+            usage: "jzen commands",
             description: "List all available commands",
-            example: "jed commands",
+            example: "jzen commands",
         },
         CmdMeta {
             name: "explain",
-            usage: "jed explain <command>",
+            usage: "jzen explain <command>",
             description: "Show detailed help for a command",
-            example: "jed explain set",
+            example: "jzen explain set",
         },
         CmdMeta {
             name: "completions",
-            usage: "jed completions <shell>",
+            usage: "jzen completions <shell>",
             description: "Generate shell completion script",
-            example: "jed completions bash > ~/.bash_completion.d/jed",
+            example: "jzen completions bash > ~/.bash_completion.d/jzen",
         },
     ]
 }
@@ -349,7 +349,7 @@ fn print_commands(ctx: &Ctx) {
         })
         .collect();
 
-    let actions = vec!["jed explain <command>".to_string()];
+    let actions = vec!["jzen explain <command>".to_string()];
     ctx.print_raw_with_actions(serde_json::json!({"commands": cmds}), &actions);
 }
 
@@ -363,8 +363,8 @@ fn print_command_help(cmd_name: &str, ctx: &Ctx) {
             "example":     c.example,
         }));
     } else {
-        let fix = "Run 'jed commands' to see all available commands";
-        let actions = vec!["jed commands".to_string()];
+        let fix = "Run 'jzen commands' to see all available commands";
+        let actions = vec!["jzen commands".to_string()];
         ctx.print_error(
             &format!("Unknown command: '{cmd_name}'"),
             Some(fix),

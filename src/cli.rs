@@ -5,8 +5,8 @@ use clap_complete::Shell;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "jed",
-    about = "Jed — JSON editor: dual-interface tool for humans and AI agents",
+    name = "jzen",
+    about = "Jzen — JSON editor: dual-interface tool for humans and AI agents",
     version
 )]
 pub struct Cli {
